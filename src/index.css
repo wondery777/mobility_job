@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Mobility Banner SVG Animations */
+@keyframes roadDashAnim {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -48;
+  }
+}
+
+@keyframes carRockAnim {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-1.5px) rotate(-0.4deg);
+  }
+  75% {
+    transform: translateY(0.5px) rotate(0.3deg);
+  }
+}
+
+@keyframes sensorPulseAnim {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes radarWaveAnim {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+.anim-road {
+  animation: roadDashAnim 0.75s linear infinite;
+}
+
+.anim-car {
+  animation: carRockAnim 1.6s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+.anim-sensor {
+  animation: sensorPulseAnim 1.2s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+.anim-radar {
+  animation: radarWaveAnim 1.8s cubic-bezier(0.2, 0.8, 0.4, 1) infinite;
+  transform-origin: center center;
+}
+
+/* Reduced motion compliance */
+@media (prefers-reduced-motion: reduce) {
+  .anim-road,
+  .anim-car,
+  .anim-sensor,
+  .anim-radar {
+    animation: none !important;
+  }
+}
+
+/* Custom scrollbars inside mobile container */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 9999px;
+}
+

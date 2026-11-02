@@ -1,0 +1,6 @@
+{
+  "name": "MobilityJob - 모빌리티 커리어 플랫폼",
+  "description": "자율주행, 전기차·배터리, UAM, 차량SW 등 모빌리티 분야 취업 준비생을 위한 채용공고, 기술 매칭, 뉴스 및 일정 캘린더 모바일 앱",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
