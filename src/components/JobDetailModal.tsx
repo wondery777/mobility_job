@@ -19,6 +19,7 @@ import {
   Check,
   Target,
   Wrench,
+  GraduationCap,
 } from 'lucide-react';
 import { Job, MOBILITY_FIELDS } from '../data';
 import { calculateDday } from './JobCard';
@@ -30,6 +31,7 @@ export interface AISummaryResult {
   preferred: string[];
   skills: string[];
   certificates: string[];
+  majors?: string[];
   deadline: string;
   level: string;
   analyzedAt?: string;
@@ -42,6 +44,7 @@ interface JobDetailModalProps {
   onToggleBookmark: (jobId: string) => void;
   mySkills: string[];
   myCertificates: string[];
+  myMajors?: string[];
   onOpenSourceUrl: (url: string, title: string) => void;
   viewMode?: 'mobile' | 'web';
 }
@@ -55,6 +58,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   onToggleBookmark,
   mySkills,
   myCertificates,
+  myMajors = [],
   onOpenSourceUrl,
   viewMode = 'mobile',
 }) => {
@@ -90,7 +94,10 @@ ${job.preferred.map((p) => `- ${p}`).join('\n')}
 ${job.skills.join(', ')}
 
 [관련 자격증]
-${(job.certificates || []).join(', ')}`;
+${(job.certificates || []).join(', ')}
+
+[관련/우대 전공]
+${(job.majors || []).join(', ')}`;
 
     setInputText(defaultFullText);
 
@@ -167,6 +174,7 @@ ${(job.certificates || []).join(', ')}`;
         preferred: Array.isArray(data.preferred) ? data.preferred : [],
         skills: Array.isArray(data.skills) ? data.skills : [],
         certificates: Array.isArray(data.certificates) ? data.certificates : [],
+        majors: Array.isArray(data.majors) ? data.majors : [],
         deadline: data.deadline || '정보 없음',
         level: data.level || '정보 없음',
         analyzedAt: new Date().toLocaleTimeString('ko-KR', {
@@ -225,6 +233,10 @@ ${(job.certificates || []).join(', ')}`;
     aiResult && aiResult.certificates.length > 0
       ? aiResult.certificates
       : job.certificates || [];
+  const activeMajors =
+    aiResult && aiResult.majors && aiResult.majors.length > 0
+      ? aiResult.majors
+      : job.majors || [];
 
   // Skill matching calculations
   const matchedSkills = activeSkills.filter((sk) =>
@@ -238,6 +250,14 @@ ${(job.certificates || []).join(', ')}`;
       ? Math.round((matchedSkills.length / activeSkills.length) * 100)
       : 100;
 
+  // Major matching calculations
+  const matchedMajors = activeMajors.filter((m) =>
+    isCompetencyMatched(m, myMajors)
+  );
+  const missingMajors = activeMajors.filter(
+    (m) => !isCompetencyMatched(m, myMajors)
+  );
+
   // Certificate matching calculations
   const matchedCertificates = activeCertificates.filter((cert) =>
     isCompetencyMatched(cert, myCertificates)
@@ -250,10 +270,14 @@ ${(job.certificates || []).join(', ')}`;
       ? Math.round((matchedCertificates.length / activeCertificates.length) * 100)
       : 100;
 
-  // Overall Total Competency Matching Percentage (Skills + Certificates)
-  const totalCompetencyItems = activeSkills.length + activeCertificates.length;
+  // Overall Total Competency Matching Percentage (Skills + Certificates + Major fit)
+  const totalCompetencyItems =
+    activeSkills.length +
+    activeCertificates.length +
+    (activeMajors.length > 0 ? 1 : 0);
+  const majorBonus = activeMajors.length > 0 && matchedMajors.length > 0 ? 1 : 0;
   const totalMatchedCompetencies =
-    matchedSkills.length + matchedCertificates.length;
+    matchedSkills.length + matchedCertificates.length + majorBonus;
   const overallMatchPercentage =
     totalCompetencyItems > 0
       ? Math.round((totalMatchedCompetencies / totalCompetencyItems) * 100)
@@ -393,51 +417,69 @@ ${(job.certificates || []).join(', ')}`;
               </div>
 
               {/* Sub Breakdown Cards */}
-              <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
+              <div className="grid grid-cols-3 gap-1.5 pt-0.5 text-xs">
                 {/* 기술 매칭 */}
-                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                      <Wrench className="w-3 h-3 text-blue-400" />
-                      <span>요구 기술 매칭</span>
-                    </div>
-                    <div className="text-sm font-bold text-white mt-0.5">
-                      {skillMatchPercentage}%
-                      <span className="text-[10px] text-slate-400 font-normal ml-1">
-                        ({matchedSkills.length}/{activeSkills.length})
-                      </span>
-                    </div>
+                <div className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Wrench className="w-3 h-3 text-blue-400 shrink-0" />
+                    <span className="truncate">요구 기술</span>
                   </div>
-                  <div className="text-[10px] flex flex-col items-end gap-0.5">
-                    <span className="text-emerald-400 font-semibold">✓ {matchedSkills.length}</span>
-                    <span className="text-rose-400 font-semibold">✗ {missingSkills.length}</span>
+                  <div className="mt-1 flex items-baseline justify-between">
+                    <span className="text-xs sm:text-sm font-bold text-white">
+                      {skillMatchPercentage}%
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-semibold">
+                      ✓{matchedSkills.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 전공 적합성 */}
+                <div className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <GraduationCap className="w-3 h-3 text-purple-400 shrink-0" />
+                    <span className="truncate">우대 전공</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between">
+                    <span
+                      className={`text-xs sm:text-sm font-bold ${
+                        matchedMajors.length > 0
+                          ? 'text-emerald-400'
+                          : activeMajors.length > 0
+                          ? 'text-amber-400'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {matchedMajors.length > 0
+                        ? '일치'
+                        : activeMajors.length > 0
+                        ? '우대팁'
+                        : '무관'}
+                    </span>
+                    {activeMajors.length > 0 && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {matchedMajors.length}/{activeMajors.length}
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 {/* 자격증 매칭 */}
-                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                      <Award className="w-3 h-3 text-amber-400" />
-                      <span>관련 자격증 매칭</span>
-                    </div>
-                    <div className="text-sm font-bold text-white mt-0.5">
-                      {activeCertificates.length > 0 ? `${certMatchPercentage}%` : '정보 없음'}
-                      {activeCertificates.length > 0 && (
-                        <span className="text-[10px] text-slate-400 font-normal ml-1">
-                          ({matchedCertificates.length}/{activeCertificates.length})
-                        </span>
-                      )}
-                    </div>
+                <div className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Award className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span className="truncate">관련 자격증</span>
                   </div>
-                  {activeCertificates.length > 0 ? (
-                    <div className="text-[10px] flex flex-col items-end gap-0.5">
-                      <span className="text-emerald-400 font-semibold">✓ {matchedCertificates.length}</span>
-                      <span className="text-rose-400 font-semibold">✗ {missingCertificates.length}</span>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] text-slate-500">필수 없음</span>
-                  )}
+                  <div className="mt-1 flex items-baseline justify-between">
+                    <span className="text-xs sm:text-sm font-bold text-white">
+                      {activeCertificates.length > 0 ? `${certMatchPercentage}%` : '해당없음'}
+                    </span>
+                    {activeCertificates.length > 0 && (
+                      <span className="text-[10px] text-emerald-400 font-semibold">
+                        ✓{matchedCertificates.length}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -728,6 +770,84 @@ ${(job.certificates || []).join(', ')}`;
               ) : (
                 <p className="text-emerald-600 dark:text-emerald-400 font-semibold">
                   🎉 이 공고의 모든 필수 기술 역량을 이미 보유하고 계십니다!
+                </p>
+              )}
+            </div>
+
+            {/* 🎓 관련/우대 전공 칩 목록 및 매칭 */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <GraduationCap className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>관련 / 우대 전공</span>
+                </div>
+                <div className="text-xs">
+                  {activeMajors.length > 0 ? (
+                    <>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                        ✓ {matchedMajors.length}
+                      </span>
+                      <span className="text-slate-400 mx-1">/</span>
+                      <span className="text-slate-500 dark:text-slate-400">
+                        {activeMajors.length}개
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-slate-400 text-[11px]">전공 무관</span>
+                  )}
+                </div>
+              </div>
+
+              {activeMajors.length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {activeMajors.map((major) => {
+                      const hasMajor = isCompetencyMatched(major, myMajors);
+                      return (
+                        <span
+                          key={major}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                            hasMajor
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {hasMajor ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          ) : (
+                            <GraduationCap className="w-3.5 h-3.5 text-slate-400" />
+                          )}
+                          <span>{major}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+
+                  {/* 우대 안내 팁 */}
+                  <div className="text-[11px] leading-relaxed pt-0.5">
+                    {matchedMajors.length > 0 ? (
+                      <p className="text-emerald-600 dark:text-emerald-400 font-medium flex items-start gap-1">
+                        <span className="shrink-0 font-bold">✓</span>
+                        <span>
+                          내 전공({matchedMajors.join(', ')})과 일치하여 학과 적합성 평가에서 우수한 평가를 받을 수 있습니다.
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-slate-500 dark:text-slate-400 flex items-start gap-1">
+                        <span className="shrink-0">💡</span>
+                        <span>
+                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">
+                            우대 안내:
+                          </strong>{' '}
+                          {missingMajors.join(', ')} 전공자 또는 관련 유사 과목 이수 시 우대 가점이 적용될 수 있습니다.
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-slate-400">
+                  전공 제한이 없거나 경력/실무 역량 중심의 포지션입니다.
                 </p>
               )}
             </div>

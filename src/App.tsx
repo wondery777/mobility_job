@@ -42,6 +42,8 @@ const STORAGE_KEYS = {
   CUSTOM_SKILLS: 'mobility_job_custom_skills_v1',
   MY_CERTS: 'mobility_job_my_certs_v1',
   CUSTOM_CERTS: 'mobility_job_custom_certs_v1',
+  MY_MAJORS: 'mobility_job_my_majors_v1',
+  CUSTOM_MAJORS: 'mobility_job_custom_majors_v1',
   THEME: 'mobility_job_theme_v1',
   VIEW_MODE: 'mobility_job_view_mode_v1',
 };
@@ -138,6 +140,27 @@ export default function App() {
     }
   });
 
+  // Majors state
+  const [myMajors, setMyMajors] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.MY_MAJORS);
+      return saved
+        ? JSON.parse(saved)
+        : ['컴퓨터공학과', '소프트웨어학과'];
+    } catch {
+      return ['컴퓨터공학과', '소프트웨어학과'];
+    }
+  });
+
+  const [customMajors, setCustomMajors] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CUSTOM_MAJORS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Sync theme to HTML root
   useEffect(() => {
     if (isDarkMode) {
@@ -212,6 +235,29 @@ export default function App() {
       console.error(e);
     }
   }, [customCertificates]);
+
+  // Persist Majors
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.MY_MAJORS,
+        JSON.stringify(myMajors)
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }, [myMajors]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.CUSTOM_MAJORS,
+        JSON.stringify(customMajors)
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }, [customMajors]);
 
   // Toggle Bookmark
   const handleToggleBookmark = (jobId: string) => {
@@ -400,6 +446,10 @@ export default function App() {
               onUpdateMyCertificates={setMyCertificates}
               customCertificates={customCertificates}
               onUpdateCustomCertificates={setCustomCertificates}
+              myMajors={myMajors}
+              onUpdateMyMajors={setMyMajors}
+              customMajors={customMajors}
+              onUpdateCustomMajors={setCustomMajors}
               viewMode={viewMode}
             />
           )}
@@ -465,6 +515,7 @@ export default function App() {
         onToggleBookmark={handleToggleBookmark}
         mySkills={mySkills}
         myCertificates={myCertificates}
+        myMajors={myMajors}
         onOpenSourceUrl={handleOpenSourceUrl}
         viewMode={viewMode}
       />

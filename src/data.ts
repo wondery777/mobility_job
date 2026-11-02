@@ -12,6 +12,7 @@ export interface Job {
   preferred: string[];
   sourceUrl: string;
   certificates?: string[];
+  majors?: string[];
   salary?: string;
   department?: string;
 }
@@ -195,6 +196,13 @@ export const INITIAL_CERTIFICATES = [
   '초경량비행장치 조종자', '운전면허 1종', 'TOEIC', 'OPIc'
 ];
 
+export const INITIAL_MAJORS = [
+  '기계공학과', '자동차공학과', '전기공학과', '전자공학과',
+  '컴퓨터공학과', '소프트웨어학과', 'AI·데이터공학과', '제어계측공학과',
+  '항공우주공학과', '로봇공학과', '산업공학과', '신소재공학과',
+  '화학공학과', '통신공학과', '메카트로닉스공학과', '비전공(기타)'
+];
+
 export const SAMPLE_JOBS: Job[] = [
   {
     id: 'job-01',
@@ -219,6 +227,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 운전면허 1종, 정보처리기사'
     ],
     certificates: ['운전면허 1종', '정보처리기사'],
+    majors: ['컴퓨터공학과', '소프트웨어학과', '로봇공학과', '전자공학과', 'AI·데이터공학과'],
     salary: '연봉 4,200만 ~ 4,800만 원 (성과급 별도)',
     department: '자율주행 코어선행개발본부',
     sourceUrl: 'https://careers.example.com/jobs/autocore-01',
@@ -245,6 +254,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 전기기사, 전자기사'
     ],
     certificates: ['전기기사', '전자기사'],
+    majors: ['전기공학과', '전자공학과', '제어계측공학과', '화학공학과'],
     salary: '회사 내규에 따름 (신입 초봉 4,600만 원 선)',
     department: '배터리제어개발팀',
     sourceUrl: 'https://careers.example.com/jobs/enertec-02',
@@ -270,6 +280,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 항공기사, 초경량비행장치 조종자'
     ],
     certificates: ['항공기사', '초경량비행장치 조종자'],
+    majors: ['항공우주공학과', '기계공학과', '제어계측공학과', '로봇공학과'],
     salary: '연봉 6,000만 ~ 7,500만 원 (스톡옵션 협의)',
     department: '비행제어연구소',
     sourceUrl: 'https://careers.example.com/jobs/skymotion-03',
@@ -296,6 +307,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: SQLD, 정보처리기사'
     ],
     certificates: ['SQLD', '정보처리기사'],
+    majors: ['컴퓨터공학과', '소프트웨어학과', '산업공학과', 'AI·데이터공학과'],
     salary: '신입 4,500만 원 / 경력 협의',
     department: 'MaaS Core 플랫폼팀',
     sourceUrl: 'https://careers.example.com/jobs/routenow-04',
@@ -321,6 +333,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 정보보안기사, 정보처리기사'
     ],
     certificates: ['정보보안기사', '정보처리기사'],
+    majors: ['전자공학과', '컴퓨터공학과', '전기공학과', '통신공학과'],
     salary: '연봉 5,500만 ~ 7,000만 원',
     department: 'SDV 전장SW본부',
     sourceUrl: 'https://careers.example.com/jobs/nextsemi-05',
@@ -346,6 +359,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 기계기사, 일반기계기사, 컴퓨터활용능력'
     ],
     certificates: ['기계기사', '컴퓨터활용능력'],
+    majors: ['기계공학과', '자동차공학과', '메카트로닉스공학과'],
     salary: '연봉 4,400만 원 (기숙사/식사 지원)',
     department: '샤시시스템개발부',
     sourceUrl: 'https://careers.example.com/jobs/halladrive-06',
@@ -371,6 +385,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: ADsP, 빅데이터분석기사'
     ],
     certificates: ['ADsP', '빅데이터분석기사'],
+    majors: ['컴퓨터공학과', 'AI·데이터공학과', '소프트웨어학과', '전자공학과'],
     salary: '경력 및 학위에 따라 개별 협의 (스톡옵션 부여)',
     department: 'AI Vision 연구팀',
     sourceUrl: 'https://careers.example.com/jobs/visiondrive-07',
@@ -395,6 +410,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 기계기사, 품질경영기사'
     ],
     certificates: ['기계기사', '품질경영기사'],
+    majors: ['기계공학과', '화학공학과', '자동차공학과'],
     salary: '연봉 5,800만 ~ 7,200만 원',
     department: '열관리선행해석팀',
     sourceUrl: 'https://careers.example.com/jobs/greencell-08',
@@ -419,6 +435,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: SQLD, ADsP, 정보처리기사'
     ],
     certificates: ['SQLD', 'ADsP', '정보처리기사'],
+    majors: ['컴퓨터공학과', '산업공학과', 'AI·데이터공학과', '소프트웨어학과'],
     salary: '연봉 4,100만 ~ 4,500만 원',
     department: '데이터플랫폼팀',
     sourceUrl: 'https://careers.example.com/jobs/mobilink-09',
@@ -444,6 +461,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 초경량비행장치 조종자, 정보처리기사'
     ],
     certificates: ['초경량비행장치 조종자', '정보처리기사'],
+    majors: ['항공우주공학과', '로봇공학과', '컴퓨터공학과', '전자공학과'],
     salary: '연봉 4,200만 ~ 5,300만 원',
     department: '항법시스템팀',
     sourceUrl: 'https://careers.example.com/jobs/aerobotics-10',
@@ -468,6 +486,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 정보처리기사'
     ],
     certificates: ['정보처리기사'],
+    majors: ['컴퓨터공학과', '전자공학과', '소프트웨어학과'],
     salary: '연봉 7,500만 ~ 9,500만 원',
     department: 'SoC SW 플랫폼그룹',
     sourceUrl: 'https://careers.example.com/jobs/autochips-11',
@@ -492,6 +511,7 @@ export const SAMPLE_JOBS: Job[] = [
       '관련 자격증: 기계기사, 품질경영기사'
     ],
     certificates: ['기계기사', '품질경영기사'],
+    majors: ['기계공학과', '자동차공학과', '메카트로닉스공학과', '신소재공학과'],
     salary: '신입 4,300만 원 / 경력직 별도 협의',
     department: '전동화구동선행설계팀',
     sourceUrl: 'https://careers.example.com/jobs/powertech-12',

@@ -47,9 +47,10 @@ app.post('/api/summarize-job', async (req, res) => {
 3. preferred: 우대 사항/가산점 요소를 항목별 배열로 추출하세요.
 4. skills: 본문에서 언급된 프로그래밍 언어, 툴, 프레임워크, 도메인 기술 키워드(예: C++, ROS, Python, Linux, CAN, BMS, MATLAB, Docker 등)를 정제된 문자열 배열로 추출하세요.
 5. certificates: 관련 언급된 자격증(예: 정보처리기사, 전기기사, 운전면허 등) 목록을 배열로 추출하세요.
-6. deadline: 서류 접수 마감일을 추출하세요. (가능한 경우 YYYY-MM-DD 형식)
-7. level: 경력 조건(예: '신입', '경력 3년+', '신입·경력', '경력 무관')을 추출하세요.
-8. [필수 엄수] 본문에 없는 내용은 '정보 없음'으로 적고 추측하지 마.
+6. majors: 본문에서 요구하거나 우대하는 대학 전공(예: 기계공학과, 자동차공학과, 컴퓨터공학과, 전자공학과, 소프트웨어학과, 화학공학과, 항공우주공학과 등) 목록을 정제된 문자열 배열로 추출하세요.
+7. deadline: 서류 접수 마감일을 추출하세요. (가능한 경우 YYYY-MM-DD 형식)
+8. level: 경력 조건(예: '신입', '경력 3년+', '신입·경력', '경력 무관')을 추출하세요.
+9. [필수 엄수] 본문에 없는 내용은 '정보 없음'으로 적고 추측하지 마.
 
 채용 공고 원문:
 ${text.trim()}`;
@@ -87,6 +88,11 @@ ${text.trim()}`;
               items: { type: Type.STRING },
               description: '관련 자격증 목록',
             },
+            majors: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '관련 또는 우대 대학 전공 목록',
+            },
             deadline: {
               type: Type.STRING,
               description: '공고 마감일 (YYYY-MM-DD 또는 정보 없음)',
@@ -96,7 +102,7 @@ ${text.trim()}`;
               description: '경력 요건',
             },
           },
-          required: ['summary', 'required', 'preferred', 'skills', 'certificates', 'deadline', 'level'],
+          required: ['summary', 'required', 'preferred', 'skills', 'certificates', 'majors', 'deadline', 'level'],
         },
       },
     });

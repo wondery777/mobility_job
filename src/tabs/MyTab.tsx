@@ -9,11 +9,13 @@ import {
   Award,
   Wrench,
   BookOpen,
+  GraduationCap,
 } from 'lucide-react';
 import {
   Job,
   INITIAL_SKILLS,
   INITIAL_CERTIFICATES,
+  INITIAL_MAJORS,
   SAMPLE_NOTICES,
   ColumnNotice,
 } from '../data';
@@ -32,6 +34,10 @@ interface MyTabProps {
   onUpdateMyCertificates: (certs: string[]) => void;
   customCertificates: string[];
   onUpdateCustomCertificates: (certs: string[]) => void;
+  myMajors: string[];
+  onUpdateMyMajors: (majors: string[]) => void;
+  customMajors: string[];
+  onUpdateCustomMajors: (majors: string[]) => void;
   viewMode?: 'mobile' | 'web';
 }
 
@@ -48,10 +54,15 @@ export const MyTab: React.FC<MyTabProps> = ({
   onUpdateMyCertificates,
   customCertificates,
   onUpdateCustomCertificates,
+  myMajors,
+  onUpdateMyMajors,
+  customMajors,
+  onUpdateCustomMajors,
   viewMode = 'mobile',
 }) => {
   const [newSkillInput, setNewSkillInput] = useState('');
   const [newCertInput, setNewCertInput] = useState('');
+  const [newMajorInput, setNewMajorInput] = useState('');
   const [selectedNotice, setSelectedNotice] = useState<ColumnNotice | null>(null);
 
   // Saved jobs list
@@ -121,16 +132,51 @@ export const MyTab: React.FC<MyTabProps> = ({
     setNewCertInput('');
   };
 
+  // --- Major Handlers ---
+  const handleToggleMajor = (major: string) => {
+    const isSelected = myMajors.includes(major);
+    const isCustom = customMajors.includes(major);
+
+    if (isSelected) {
+      // Unselecting
+      onUpdateMyMajors(myMajors.filter((m) => m !== major));
+      // 직접 추가한 항목은 해제하면 목록에서 삭제
+      if (isCustom) {
+        onUpdateCustomMajors(customMajors.filter((m) => m !== major));
+      }
+    } else {
+      // Selecting
+      onUpdateMyMajors([...myMajors, major]);
+    }
+  };
+
+  const handleAddCustomMajor = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const val = newMajorInput.trim();
+    if (!val) return;
+
+    if (!INITIAL_MAJORS.includes(val) && !customMajors.includes(val)) {
+      onUpdateCustomMajors([...customMajors, val]);
+    }
+    if (!myMajors.includes(val)) {
+      onUpdateMyMajors([...myMajors, val]);
+    }
+    setNewMajorInput('');
+  };
+
   // All display chips
   const allSkillChips = Array.from(new Set([...INITIAL_SKILLS, ...customSkills]));
   const allCertChips = Array.from(
     new Set([...INITIAL_CERTIFICATES, ...customCertificates])
   );
+  const allMajorChips = Array.from(
+    new Set([...INITIAL_MAJORS, ...customMajors])
+  );
 
   return (
     <div className="space-y-4 px-3 py-3 pb-8">
       {/* Profile Header */}
-      <div className="p-4 rounded-[14px] bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-md flex items-center justify-between">
+      <div className="p-4 rounded-[14px] bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white shadow-md flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shadow-inner">
             <User className="w-6 h-6" />
@@ -143,7 +189,7 @@ export const MyTab: React.FC<MyTabProps> = ({
               </span>
             </div>
             <p className="text-xs text-blue-100">
-              보유 기술 {mySkills.length}개 · 자격증 {myCertificates.length}개 등록됨
+              보유 전공 {myMajors.length}개 · 기술 {mySkills.length}개 · 자격증 {myCertificates.length}개 등록됨
             </p>
           </div>
         </div>
@@ -242,8 +288,79 @@ export const MyTab: React.FC<MyTabProps> = ({
           </div>
         </div>
 
-        {/* Right Column on Web: Skills & Certificates */}
+        {/* Right Column on Web: Majors, Skills & Certificates */}
         <div className="space-y-4">
+          {/* 🎓 내 보유 전공 */}
+          <div className="p-4 rounded-[14px] bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <GraduationCap className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                  내 보유 전공 ({myMajors.length}개 선택됨)
+                </h3>
+              </div>
+              <span className="text-[10px] text-slate-400">
+                우대 전공 매칭에 반영
+              </span>
+            </div>
+
+            {/* Chips */}
+            <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {allMajorChips.map((major) => {
+                const isSelected = myMajors.includes(major);
+                const isCustom = customMajors.includes(major);
+
+                return (
+                  <button
+                    key={major}
+                    type="button"
+                    onClick={() => handleToggleMajor(major)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg font-medium border transition-all ${
+                      isSelected
+                        ? 'bg-purple-600 text-white border-purple-600 font-bold shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3 h-3 stroke-[2.5]" />}
+                    <span>{major}</span>
+                    {isCustom && (
+                      <span
+                        className={`text-[9px] px-1 py-0.2 rounded-full ${
+                          isSelected
+                            ? 'bg-purple-700 text-purple-100'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                        }`}
+                      >
+                        직접추가
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom Input */}
+            <form onSubmit={handleAddCustomMajor} className="flex items-center gap-1.5 pt-1">
+              <input
+                type="text"
+                value={newMajorInput}
+                onChange={(e) => setNewMajorInput(e.target.value)}
+                placeholder="전공 직접 추가 (예: 스마트모빌리티공학, 제어계측)"
+                className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+              <button
+                type="submit"
+                className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 shrink-0 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>추가</span>
+              </button>
+            </form>
+            <p className="text-[10px] text-slate-400">
+              * 직접 추가한 전공은 칩을 눌러 해제 시 목록에서 자동 삭제됩니다.
+            </p>
+          </div>
+
           {/* 🛠 내 보유 기술 */}
           <div className="p-4 rounded-[14px] bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
