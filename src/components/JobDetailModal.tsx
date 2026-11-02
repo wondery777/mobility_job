@@ -17,6 +17,8 @@ import {
   Send,
   Loader2,
   Check,
+  Target,
+  Wrench,
 } from 'lucide-react';
 import { Job, MOBILITY_FIELDS } from '../data';
 import { calculateDday } from './JobCard';
@@ -201,22 +203,61 @@ ${(job.certificates || []).join(', ')}`;
   const dDayInfo = calculateDday(job.deadline);
   const fieldDef = MOBILITY_FIELDS.find((f) => f.name === job.field);
 
+  // Helper for flexible trimmed case-insensitive matching
+  const isCompetencyMatched = (target: string, userList: string[]): boolean => {
+    if (!target || !userList || userList.length === 0) return false;
+    const t = target.trim().toLowerCase();
+    return userList.some((my) => {
+      const u = my.trim().toLowerCase();
+      return u === t || t.includes(u) || u.includes(t);
+    });
+  };
+
   // Active skills & requirements to display (use AI result if available, otherwise original job)
   const activeSummary = aiResult ? aiResult.summary : job.summary;
-  const activeSkills = aiResult && aiResult.skills.length > 0 ? aiResult.skills : job.skills;
-  const activeRequired = aiResult && aiResult.required.length > 0 ? aiResult.required : job.required;
-  const activePreferred = aiResult && aiResult.preferred.length > 0 ? aiResult.preferred : job.preferred;
-  const activeCertificates = aiResult && aiResult.certificates.length > 0
-    ? aiResult.certificates
-    : job.certificates || [];
+  const activeSkills =
+    aiResult && aiResult.skills.length > 0 ? aiResult.skills : job.skills;
+  const activeRequired =
+    aiResult && aiResult.required.length > 0 ? aiResult.required : job.required;
+  const activePreferred =
+    aiResult && aiResult.preferred.length > 0 ? aiResult.preferred : job.preferred;
+  const activeCertificates =
+    aiResult && aiResult.certificates.length > 0
+      ? aiResult.certificates
+      : job.certificates || [];
 
-  // Skill matching calculations against user's skills
-  const matchedSkills = activeSkills.filter((sk) => mySkills.includes(sk));
-  const missingSkills = activeSkills.filter((sk) => !mySkills.includes(sk));
-  const matchPercentage =
+  // Skill matching calculations
+  const matchedSkills = activeSkills.filter((sk) =>
+    isCompetencyMatched(sk, mySkills)
+  );
+  const missingSkills = activeSkills.filter(
+    (sk) => !isCompetencyMatched(sk, mySkills)
+  );
+  const skillMatchPercentage =
     activeSkills.length > 0
       ? Math.round((matchedSkills.length / activeSkills.length) * 100)
       : 100;
+
+  // Certificate matching calculations
+  const matchedCertificates = activeCertificates.filter((cert) =>
+    isCompetencyMatched(cert, myCertificates)
+  );
+  const missingCertificates = activeCertificates.filter(
+    (cert) => !isCompetencyMatched(cert, myCertificates)
+  );
+  const certMatchPercentage =
+    activeCertificates.length > 0
+      ? Math.round((matchedCertificates.length / activeCertificates.length) * 100)
+      : 100;
+
+  // Overall Total Competency Matching Percentage (Skills + Certificates)
+  const totalCompetencyItems = activeSkills.length + activeCertificates.length;
+  const totalMatchedCompetencies =
+    matchedSkills.length + matchedCertificates.length;
+  const overallMatchPercentage =
+    totalCompetencyItems > 0
+      ? Math.round((totalMatchedCompetencies / totalCompetencyItems) * 100)
+      : skillMatchPercentage;
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -273,6 +314,135 @@ ${(job.certificates || []).join(', ')}`;
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           
+          {/* 🎯 전체 매칭률(%) 상단 시각화 카드 */}
+          <div className="rounded-[16px] p-4 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white shadow-md border border-blue-900/60 relative overflow-hidden">
+            {/* Background decorative glow */}
+            <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-blue-500/20 blur-2xl pointer-events-none" />
+
+            <div className="relative z-10 space-y-3">
+              {/* Header: Title & AI indicator */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                  <Target className="w-4 h-4 text-emerald-400" />
+                  <span>내 스펙 종합 매칭 분석</span>
+                </div>
+                <div>
+                  {aiResult ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/40">
+                      <Sparkles className="w-3 h-3 text-cyan-300 animate-pulse" />
+                      Gemini AI 분석 기준
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                      공고 기본 스펙 기준
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Big Score Row */}
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black tracking-tight text-white">
+                      {overallMatchPercentage}%
+                    </span>
+                    <span className="text-xs font-bold text-slate-300">
+                      전체 매칭률
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate-300">
+                    총 {totalCompetencyItems}개 요구 스펙 중{' '}
+                    <span className="text-emerald-400 font-bold">
+                      {totalMatchedCompetencies}개 일치 (초록 {totalMatchedCompetencies} · 빨강{' '}
+                      {totalCompetencyItems - totalMatchedCompetencies})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Fit recommendation badge */}
+                <div
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold border shrink-0 text-center ${
+                    overallMatchPercentage >= 75
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : overallMatchPercentage >= 50
+                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                >
+                  {overallMatchPercentage >= 75
+                    ? '서류 적합도: 최상 🚀'
+                    : overallMatchPercentage >= 50
+                    ? '서류 적합도: 양호 👍'
+                    : '역량 보완 권장 💡'}
+                </div>
+              </div>
+
+              {/* Full width Progress Bar */}
+              <div className="w-full h-2.5 rounded-full bg-slate-800/90 border border-slate-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${
+                    overallMatchPercentage >= 75
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                      : overallMatchPercentage >= 50
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                      : 'bg-gradient-to-r from-amber-500 to-rose-400'
+                  }`}
+                  style={{ width: `${overallMatchPercentage}%` }}
+                />
+              </div>
+
+              {/* Sub Breakdown Cards */}
+              <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
+                {/* 기술 매칭 */}
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                      <Wrench className="w-3 h-3 text-blue-400" />
+                      <span>요구 기술 매칭</span>
+                    </div>
+                    <div className="text-sm font-bold text-white mt-0.5">
+                      {skillMatchPercentage}%
+                      <span className="text-[10px] text-slate-400 font-normal ml-1">
+                        ({matchedSkills.length}/{activeSkills.length})
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] flex flex-col items-end gap-0.5">
+                    <span className="text-emerald-400 font-semibold">✓ {matchedSkills.length}</span>
+                    <span className="text-rose-400 font-semibold">✗ {missingSkills.length}</span>
+                  </div>
+                </div>
+
+                {/* 자격증 매칭 */}
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                      <Award className="w-3 h-3 text-amber-400" />
+                      <span>관련 자격증 매칭</span>
+                    </div>
+                    <div className="text-sm font-bold text-white mt-0.5">
+                      {activeCertificates.length > 0 ? `${certMatchPercentage}%` : '정보 없음'}
+                      {activeCertificates.length > 0 && (
+                        <span className="text-[10px] text-slate-400 font-normal ml-1">
+                          ({matchedCertificates.length}/{activeCertificates.length})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {activeCertificates.length > 0 ? (
+                    <div className="text-[10px] flex flex-col items-end gap-0.5">
+                      <span className="text-emerald-400 font-semibold">✓ {matchedCertificates.length}</span>
+                      <span className="text-rose-400 font-semibold">✗ {missingCertificates.length}</span>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-500">필수 없음</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Header Info */}
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -493,14 +663,14 @@ ${(job.certificates || []).join(', ')}`;
               <div className="flex items-center gap-1">
                 <span
                   className={`text-base font-extrabold ${
-                    matchPercentage >= 70
+                    skillMatchPercentage >= 70
                       ? 'text-emerald-600 dark:text-emerald-400'
-                      : matchPercentage >= 40
+                      : skillMatchPercentage >= 40
                       ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-amber-600 dark:text-amber-400'
+                      : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  {matchPercentage}%
+                  {skillMatchPercentage}%
                 </span>
                 <span className="text-[11px] text-slate-400">
                   ({matchedSkills.length}/{activeSkills.length})
@@ -512,27 +682,27 @@ ${(job.certificates || []).join(', ')}`;
             <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
               <div
                 className={`h-full transition-all duration-500 rounded-full ${
-                  matchPercentage >= 70
+                  skillMatchPercentage >= 70
                     ? 'bg-emerald-500'
-                    : matchPercentage >= 40
+                    : skillMatchPercentage >= 40
                     ? 'bg-blue-600'
-                    : 'bg-amber-500'
+                    : 'bg-rose-500'
                 }`}
-                style={{ width: `${matchPercentage}%` }}
+                style={{ width: `${skillMatchPercentage}%` }}
               />
             </div>
 
-            {/* Skill chips: Green for owned, Red for missing */}
+            {/* Skill chips: Green for owned (초록색), Red for missing (빨간색) */}
             <div className="flex flex-wrap gap-1.5 pt-1">
               {activeSkills.map((sk) => {
-                const hasSkill = mySkills.includes(sk);
+                const hasSkill = isCompetencyMatched(sk, mySkills);
                 return (
                   <div
                     key={sk}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
                       hasSkill
-                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                     }`}
                   >
                     {hasSkill ? (
@@ -566,30 +736,51 @@ ${(job.certificates || []).join(', ')}`;
           {/* 📜 Related Certificates */}
           {activeCertificates.length > 0 && (
             <div className="rounded-[14px] p-4 bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                <Award className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span>📜 관련 자격증</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <Award className="w-4 h-4 text-amber-500" />
+                  <span>📜 관련 자격증 대조</span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                    ✓ {matchedCertificates.length}
+                  </span>
+                  <span className="text-slate-400 mx-1">/</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {activeCertificates.length}개
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5">
+
+              {/* Certificate chips: Green for owned (초록색), Red for missing (빨간색) */}
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
                 {activeCertificates.map((cert) => {
-                  const hasCert = myCertificates.includes(cert);
+                  const hasCert = isCompetencyMatched(cert, myCertificates);
                   return (
                     <span
                       key={cert}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border ${
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
                         hasCert
-                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 font-semibold'
-                          : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                          : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                       }`}
                     >
-                      {hasCert && (
+                      {hasCert ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />
                       )}
                       <span>{cert}</span>
                     </span>
                   );
                 })}
               </div>
+
+              {missingCertificates.length > 0 && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
+                  💡 <span className="font-semibold text-amber-600 dark:text-amber-400">{missingCertificates.join(', ')}</span> 자격증 취득 시 가산점 혜택을 받을 수 있습니다.
+                </div>
+              )}
             </div>
           )}
 
