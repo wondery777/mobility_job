@@ -20,10 +20,23 @@ import {
   Target,
   Wrench,
   GraduationCap,
+  Copy,
+  CheckCheck,
+  HelpCircle,
+  MessageSquareQuote,
+  Lightbulb,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Users,
+  BarChart2,
+  TrendingUp,
 } from 'lucide-react';
 import { Job, MOBILITY_FIELDS } from '../data';
 import { calculateDday } from './JobCard';
 import { getFieldIcon } from './FieldIcons';
+import { fetchAiInterviewPrep, AiInterviewPrepResponse } from '../services/api';
+import { AiResumeAssistantModal } from './AiResumeAssistantModal';
 
 export interface AISummaryResult {
   summary: string;
@@ -45,11 +58,13 @@ interface JobDetailModalProps {
   mySkills: string[];
   myCertificates: string[];
   myMajors?: string[];
+  userGpa?: string;
   onOpenSourceUrl: (url: string, title: string) => void;
   viewMode?: 'mobile' | 'web';
 }
 
 const AI_CACHE_KEY = 'mobility_job_ai_cache_v1';
+const PREP_CACHE_KEY = 'mobility_job_prep_cache_v1';
 
 export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   job,
@@ -59,6 +74,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   mySkills,
   myCertificates,
   myMajors = [],
+  userGpa = '3.85',
   onOpenSourceUrl,
   viewMode = 'mobile',
 }) => {
@@ -71,6 +87,16 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<AISummaryResult | null>(null);
   const [isCachedResult, setIsCachedResult] = useState(false);
+
+  // Gemini AI Resume Assistant Modal State
+  const [isResumeAssistantOpen, setIsResumeAssistantOpen] = useState(false);
+
+  // AI Interview & Resume Prep states
+  const [interviewPrep, setInterviewPrep] = useState<AiInterviewPrepResponse | null>(null);
+  const [isPrepLoading, setIsPrepLoading] = useState(false);
+  const [prepErrorMsg, setPrepErrorMsg] = useState<string | null>(null);
+  const [copiedKeyIdx, setCopiedKeyIdx] = useState<number | null>(null);
+  const [expandedQuestionIdx, setExpandedQuestionIdx] = useState<number | null>(0);
 
   // Initialize input text with sample job's full descriptive content
   useEffect(() => {
@@ -110,16 +136,41 @@ ${(job.majors || []).join(', ')}`;
           setAiResult(cacheMap[job.id]);
           setIsCachedResult(true);
           setErrorMsg(null);
-          return;
+        } else {
+          setAiResult(null);
+          setIsCachedResult(false);
+          setErrorMsg(null);
         }
+      } else {
+        setAiResult(null);
+        setIsCachedResult(false);
+        setErrorMsg(null);
       }
     } catch (e) {
       console.error('Error reading AI cache', e);
+      setAiResult(null);
     }
 
-    setAiResult(null);
-    setIsCachedResult(false);
-    setErrorMsg(null);
+    // Check LocalStorage cache for Interview Prep
+    try {
+      const prepCacheRaw = localStorage.getItem(PREP_CACHE_KEY);
+      if (prepCacheRaw) {
+        const prepMap: Record<string, AiInterviewPrepResponse> = JSON.parse(prepCacheRaw);
+        if (prepMap[job.id]) {
+          setInterviewPrep(prepMap[job.id]);
+          setPrepErrorMsg(null);
+        } else {
+          setInterviewPrep(null);
+          setPrepErrorMsg(null);
+        }
+      } else {
+        setInterviewPrep(null);
+        setPrepErrorMsg(null);
+      }
+    } catch (e) {
+      console.error('Error reading prep cache', e);
+      setInterviewPrep(null);
+    }
   }, [job]);
 
   // Execute Gemini AI analysis
@@ -208,6 +259,57 @@ ${(job.majors || []).join(', ')}`;
     }
   };
 
+  // Generate Gemini Resume Key Points & Interview Prep
+  const handleGenerateInterviewPrep = async (forceRefresh = false) => {
+    if (!forceRefresh && interviewPrep) return;
+
+    setIsPrepLoading(true);
+    setPrepErrorMsg(null);
+
+    try {
+      const data = await fetchAiInterviewPrep({
+        jobTitle: job.title,
+        company: job.company,
+        field: job.field,
+        userSkills: mySkills,
+        userMajors: myMajors,
+        required: activeRequired,
+        preferred: activePreferred,
+      });
+
+      if (!data || !Array.isArray(data.resumeKeyPoints) || !Array.isArray(data.interviewQuestions)) {
+        throw new Error('AI 분석 결과 형식이 올바르지 않습니다.');
+      }
+
+      setInterviewPrep(data);
+
+      // Save to localStorage
+      try {
+        const prepCacheRaw = localStorage.getItem(PREP_CACHE_KEY);
+        const prepMap = prepCacheRaw ? JSON.parse(prepCacheRaw) : {};
+        prepMap[job.id] = data;
+        localStorage.setItem(PREP_CACHE_KEY, JSON.stringify(prepMap));
+      } catch (e) {
+        console.error('Failed to save prep cache', e);
+      }
+    } catch (err: any) {
+      console.error('Interview prep generation failed:', err);
+      setPrepErrorMsg(err?.message || '면접 준비 데이터를 생성하지 못했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsPrepLoading(false);
+    }
+  };
+
+  const handleCopyText = (text: string, idx?: number) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      if (idx !== undefined) {
+        setCopiedKeyIdx(idx);
+        setTimeout(() => setCopiedKeyIdx(null), 2000);
+      }
+    }
+  };
+
   const dDayInfo = calculateDday(job.deadline);
   const fieldDef = MOBILITY_FIELDS.find((f) => f.name === job.field);
 
@@ -291,6 +393,16 @@ ${(job.majors || []).join(', ')}`;
       alert('공고 링크 정보가 클립보드에 복사되었습니다.');
     }
   };
+
+  // Spec Benchmark calculation
+  const benchmark = job.benchmark || {
+    avgGpa: 3.75,
+    avgCertCount: 2,
+    avgSkillMatch: 75,
+    passingRateTip: '이 직무는 관련 실무 프로젝트 경험과 핵심 라이브러리 활용 역량을 증빙할 때 서류 통과율이 크게 상승합니다.',
+  };
+  const myGpaNum = parseFloat(userGpa || '3.85') || 3.85;
+  const myCertCount = myCertificates.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
@@ -542,6 +654,7 @@ ${(job.majors || []).join(', ')}`;
               </span>
             </div>
 
+            {/* Salary */}
             {job.salary && (
               <div className="mt-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 text-xs flex items-center justify-between">
                 <span className="text-slate-500 dark:text-slate-400">급여/처우</span>
@@ -550,6 +663,274 @@ ${(job.majors || []).join(', ')}`;
                 </span>
               </div>
             )}
+
+            {/* Benefits Badges */}
+            {job.benefits && job.benefits.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {job.benefits.map((benefit) => (
+                  <span
+                    key={benefit}
+                    className="inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-50/90 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-900/60"
+                  >
+                    {benefit}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 🤖 Gemini AI 올인원 자소서 도우미 실행 버튼 배너 */}
+          <button
+            type="button"
+            onClick={() => setIsResumeAssistantOpen(true)}
+            className="w-full p-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 active:scale-[0.99] text-white shadow-md shadow-indigo-500/20 flex items-center justify-between transition-all group cursor-pointer border border-white/20"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+              </div>
+              <div className="text-left">
+                <div className="text-xs font-black flex items-center gap-1.5">
+                  <span>Gemini AI 자소서 도우미</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-900">
+                    초안 + 첨삭
+                  </span>
+                </div>
+                <div className="text-[10px] text-blue-100 font-medium">
+                  500자 맞춤 초안 생성 & 100점 만점 직무 적합도 진단
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-[11px] font-bold bg-white/15 px-2.5 py-1.5 rounded-xl group-hover:bg-white/25 transition-colors">
+              <span>열기</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </button>
+
+          {/* 👥 합격자 스펙 컷라인 & 내 스펙 위치 (Spec Benchmark) */}
+          <div className="rounded-[16px] p-4 bg-white dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <BarChart2 className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>합격자 스펙 컷라인 & 내 위치</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                      1:1 벤치마크
+                    </span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400">
+                    최근 동일 직군 최종 합격자 평균 스펙 대비 내 현재 위치
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 3대 스펙 1:1 비교 바 차트 */}
+            <div className="space-y-3 pt-1">
+              {/* 1. 학부 학점 (GPA) */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                    <GraduationCap className="w-4 h-4 text-purple-500" />
+                    <span>학부 학점 (GPA)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500">
+                      내 학점 <strong className="text-blue-600 dark:text-blue-400 font-extrabold">{myGpaNum.toFixed(2)}</strong> / 4.5
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      (합격평균 {benchmark.avgGpa.toFixed(2)})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Progress bars: Mine vs Passing Average */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="w-12 text-slate-400 shrink-0 font-medium">내 학점</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 dark:bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, (myGpaNum / 4.5) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-bold text-slate-700 dark:text-slate-300">
+                      {myGpaNum.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="w-12 text-slate-400 shrink-0 font-medium">합격평균</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, (benchmark.avgGpa / 4.5) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                      {benchmark.avgGpa.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] pt-0.5">
+                  <span className="text-slate-500">
+                    {myGpaNum >= benchmark.avgGpa
+                      ? `합격선 대비 +${(myGpaNum - benchmark.avgGpa).toFixed(2)}점 상회`
+                      : `합격선 대비 -${(benchmark.avgGpa - myGpaNum).toFixed(2)}점`}
+                  </span>
+                  <span
+                    className={`font-bold px-1.5 py-0.2 rounded ${
+                      myGpaNum >= benchmark.avgGpa
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    {myGpaNum >= benchmark.avgGpa ? '안정권 🟢' : '직무역량 보완 권장 🟡'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. 보유 자격증 수 */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                    <Award className="w-4 h-4 text-amber-500" />
+                    <span>보유 자격증 수</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500">
+                      내 자격증 <strong className="text-blue-600 dark:text-blue-400 font-extrabold">{myCertCount}개</strong>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      (합격평균 {benchmark.avgCertCount}개)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="w-12 text-slate-400 shrink-0 font-medium">내 보유</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 dark:bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, (myCertCount / 4) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-bold text-slate-700 dark:text-slate-300">
+                      {myCertCount}개
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="w-12 text-slate-400 shrink-0 font-medium">합격평균</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, (benchmark.avgCertCount / 4) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                      {benchmark.avgCertCount}개
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] pt-0.5">
+                  <span className="text-slate-500">
+                    {myCertCount >= benchmark.avgCertCount
+                      ? '합격자 평균 보유 수 이상 충족'
+                      : `합격자 평균 대비 ${benchmark.avgCertCount - myCertCount}개 부족`}
+                  </span>
+                  <span
+                    className={`font-bold px-1.5 py-0.2 rounded ${
+                      myCertCount >= benchmark.avgCertCount
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    {myCertCount >= benchmark.avgCertCount ? '충족 🟢' : '자격증 보완 권장 🟡'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. 직무 기술 매칭률 */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                    <Wrench className="w-4 h-4 text-blue-500" />
+                    <span>직무 기술 스택 일치율</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500">
+                      내 일치율 <strong className="text-blue-600 dark:text-blue-400 font-extrabold">{skillMatchPercentage}%</strong>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      (합격평균 {benchmark.avgSkillMatch}%)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="w-12 text-slate-400 shrink-0 font-medium">내 일치율</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 dark:bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${skillMatchPercentage}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-bold text-slate-700 dark:text-slate-300">
+                      {skillMatchPercentage}%
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="w-12 text-slate-400 shrink-0 font-medium">합격평균</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${benchmark.avgSkillMatch}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                      {benchmark.avgSkillMatch}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] pt-0.5">
+                  <span className="text-slate-500">
+                    {skillMatchPercentage >= benchmark.avgSkillMatch
+                      ? `기술 컷라인 상회 (+${skillMatchPercentage - benchmark.avgSkillMatch}%p)`
+                      : `기술 컷라인 대비 -${benchmark.avgSkillMatch - skillMatchPercentage}%p`}
+                  </span>
+                  <span
+                    className={`font-bold px-1.5 py-0.2 rounded ${
+                      skillMatchPercentage >= benchmark.avgSkillMatch
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                    }`}
+                  >
+                    {skillMatchPercentage >= benchmark.avgSkillMatch ? '합격 안정권 🚀' : '스킬 추가 보완 필요 💡'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 합격 팁 박스 */}
+            <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300 font-bold text-[11px]">
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>합격자 데이터 분석 기반 전략 팁</span>
+              </div>
+              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                {benchmark.passingRateTip}
+              </p>
+            </div>
           </div>
 
           {/* ✨ Gemini AI Summarization Control & Result Box */}
@@ -933,6 +1314,211 @@ ${(job.majors || []).join(', ')}`;
               ))}
             </ul>
           </div>
+
+          {/* ✨ Gemini AI 맞춤 자소서 키워드 & 실전 면접 예상 질문 3선 */}
+          <div className="rounded-[16px] p-4 bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-950 text-white border border-indigo-800/60 shadow-lg space-y-3.5 relative overflow-hidden">
+            {/* Background decorative glow */}
+            <div className="absolute top-0 right-0 -mr-10 -mt-10 w-36 h-36 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
+
+            <div className="relative z-10 space-y-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                      <span>Gemini 맞춤 합격 코칭</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                        자소서 & 면접 3선
+                      </span>
+                    </h3>
+                    <p className="text-[10px] text-slate-300">
+                      내 보유 스펙 맞춤형 공략 키워드 및 실전 예상 질문
+                    </p>
+                  </div>
+                </div>
+
+                {interviewPrep && !isPrepLoading && (
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateInterviewPrep(true)}
+                    className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs flex items-center gap-1 transition-colors"
+                    title="다시 생성"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span className="text-[10px] font-semibold">재생성</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Not yet generated state */}
+              {!interviewPrep && !isPrepLoading && !prepErrorMsg && (
+                <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/80 space-y-2.5 text-center">
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    지원자의 <strong className="text-indigo-300">보유 전공·기술</strong>과 이 포지션 요구역량을 분석하여,<br className="hidden sm:inline" />
+                    서류 합격률을 높이는 <span className="text-emerald-300 font-semibold">자소서 공략 키워드 3가지</span>와 <span className="text-cyan-300 font-semibold">실전 면접 예상 질문 3가지</span>를 즉시 생성합니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateInterviewPrep(false)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs font-bold shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-[0.99]"
+                  >
+                    <Sparkles className="w-4 h-4 text-cyan-200 animate-pulse" />
+                    <span>AI 자소서 키워드 & 면접 예상 질문 3선 생성</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Loading State */}
+              {isPrepLoading && (
+                <div className="p-4 rounded-xl bg-slate-800/70 border border-indigo-900/60 space-y-3 animate-pulse">
+                  <div className="flex items-center justify-center gap-2 text-indigo-300 text-xs font-bold py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Gemini AI가 지원자 스펙과 공고를 심층 분석하여 질문을 도출 중입니다...</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-3.5 w-full bg-slate-700 rounded" />
+                    <div className="h-3.5 w-5/6 bg-slate-700 rounded" />
+                    <div className="h-3.5 w-4/6 bg-slate-700 rounded" />
+                  </div>
+                </div>
+              )}
+
+              {/* Error State */}
+              {prepErrorMsg && (
+                <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-xs text-rose-200 flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{prepErrorMsg}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateInterviewPrep(true)}
+                    className="px-2 py-1 bg-rose-700 hover:bg-rose-600 rounded text-[10px] font-bold shrink-0"
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              )}
+
+              {/* Generated Result Container */}
+              {interviewPrep && !isPrepLoading && (
+                <div className="space-y-3 pt-1">
+                  {/* 1. 자소서 핵심 키워드 3가지 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-xs font-bold text-indigo-300">
+                        <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>📝 자소서 핵심 공략 키워드 & 작성 팁 (3선)</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400">클릭하여 키워드 복사</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2">
+                      {interviewPrep.resumeKeyPoints.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-extrabold">
+                              <span>#{item.keyword}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(`[${item.keyword}] ${item.tip}`, idx)}
+                              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-700/80 hover:bg-slate-700 text-slate-300 flex items-center gap-1 transition-colors"
+                            >
+                              {copiedKeyIdx === idx ? (
+                                <>
+                                  <CheckCheck className="w-3 h-3 text-emerald-400" />
+                                  <span className="text-emerald-400 font-bold">복사됨!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-slate-400" />
+                                  <span>팁 복사</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed font-normal">
+                            {item.tip}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. 실전 면접 예상 질문 3가지 & 모범 답변 */}
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <div className="flex items-center gap-1 text-xs font-bold text-cyan-300">
+                      <MessageSquareQuote className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>🎯 실전 면접 예상 질문 3선 & 모범 답변 가이드</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {interviewPrep.interviewQuestions.map((q, idx) => {
+                        const isExpanded = expandedQuestionIdx === idx;
+                        return (
+                          <div
+                            key={idx}
+                            className="rounded-xl bg-slate-800/90 border border-slate-700 overflow-hidden transition-all"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setExpandedQuestionIdx(isExpanded ? null : idx)}
+                              className="w-full p-3 text-left flex items-start justify-between gap-2 hover:bg-slate-700/50 transition-colors"
+                            >
+                              <div className="flex items-start gap-2">
+                                <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-black flex items-center justify-center shrink-0 mt-0.5 border border-cyan-400/30">
+                                  Q{idx + 1}
+                                </span>
+                                <span className="text-xs font-bold text-white leading-snug">
+                                  {q.question}
+                                </span>
+                              </div>
+                              <span className="text-slate-400 shrink-0 mt-0.5">
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </span>
+                            </button>
+
+                            {isExpanded && (
+                              <div className="px-3 pb-3 pt-1 border-t border-slate-700/60 bg-slate-900/60 space-y-2 text-xs">
+                                {/* Intent */}
+                                <div className="p-2 rounded-lg bg-slate-800/70 border border-slate-700/50 space-y-0.5">
+                                  <div className="text-[10px] font-bold text-amber-300 flex items-center gap-1">
+                                    <HelpCircle className="w-3 h-3 text-amber-400" />
+                                    <span>면접관의 질문 의도</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                                    {q.intent}
+                                  </p>
+                                </div>
+
+                                {/* Answer Guide */}
+                                <div className="p-2.5 rounded-lg bg-blue-950/40 border border-blue-900/50 space-y-1">
+                                  <div className="text-[10px] font-bold text-emerald-300 flex items-center gap-1">
+                                    <Lightbulb className="w-3 h-3 text-emerald-400" />
+                                    <span>모범 답변 전략 & 핵심 가이드</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-200 leading-relaxed whitespace-pre-line">
+                                    {q.answerGuide}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Bottom Actions Bar */}
@@ -966,6 +1552,19 @@ ${(job.majors || []).join(', ')}`;
           </button>
         </div>
       </div>
+
+      {/* Gemini AI Resume Assistant Modal */}
+      {isResumeAssistantOpen && (
+        <AiResumeAssistantModal
+          job={job}
+          onClose={() => setIsResumeAssistantOpen(false)}
+          userGpa={userGpa}
+          userMajors={myMajors}
+          userSkills={mySkills}
+          userCertificates={myCertificates}
+          viewMode={viewMode}
+        />
+      )}
     </div>
   );
 };

@@ -722,6 +722,289 @@ ${text.trim()}`;
   }
 });
 
+// -------------------------------------------------------------
+// Endpoint 6: POST /api/ai-interview-prep (Gemini Resume & Interview Q&A)
+// -------------------------------------------------------------
+app.post('/api/ai-interview-prep', async (req, res) => {
+  try {
+    const { jobTitle, company, field, userSkills, userMajors, required, preferred } = req.body;
+
+    if (!jobTitle || !company) {
+      return res.status(400).json({ error: '공고 정보(회사명, 공고명)가 필요합니다.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: '서버에 GEMINI_API_KEY가 설정되어 있지 않습니다.' });
+    }
+
+    const prompt = `당신은 대한민국 최고 수준의 모빌리티 대기업/스타트업(현대차, 포티투닷, LG엔솔, 모셔널 등) 채용 전문 수석 면접관 및 커리어 코치입니다.
+다음 채용 공고와 지원자의 보유 역량을 바탕으로, 지원자 맞춤형 [1] 자기소개서 핵심 작성 키워드 및 공략 팁 3가지, [2] 이 직무 실전 면접 예상 질문 3가지 및 모범 답변 가이드를 작성해주세요.
+
+[채용 정보]
+- 회사: ${company}
+- 직무: ${jobTitle}
+- 분야: ${field || '모빌리티'}
+- 필수 요건: ${(required || []).join(', ') || '정보 없음'}
+- 우대 사항: ${(preferred || []).join(', ') || '정보 없음'}
+
+[지원자 보유 스펙]
+- 보유 전공: ${(userMajors || []).join(', ') || '미입력'}
+- 보유 기술: ${(userSkills || []).join(', ') || '미입력'}
+
+[작성 지침]
+1. resumeKeyPoints: 지원자가 자기소개서/이력서에 반드시 강조해야 할 핵심 키워드 3가지와 구체적인 작성 전략(tip)을 도출하세요.
+2. interviewQuestions: 이 직무 면접에서 면접관이 반드시 물어볼 날카로운 실전 기술/인성 면접 질문 3가지, 질문 의도(intent), 그리고 모범 답변 핵심 가이드(answerGuide)를 작성하세요.
+3. 한국어로 전문적이고 실용적으로 작성하세요.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        systemInstruction:
+          '모빌리티 채용 공고 맞춤형 자기소개서 핵심 키워드 및 실전 면접 예상 질문 3선을 정확한 JSON 객체로 작성합니다.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            resumeKeyPoints: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  keyword: { type: Type.STRING, description: '핵심 키워드' },
+                  tip: { type: Type.STRING, description: '자소서 작성 구체적 팁' },
+                },
+                required: ['keyword', 'tip'],
+              },
+            },
+            interviewQuestions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  question: { type: Type.STRING, description: '실전 면접 예상 질문' },
+                  intent: { type: Type.STRING, description: '면접관의 질문 의도' },
+                  answerGuide: { type: Type.STRING, description: '모범 답변 포인트 및 작성 가이드' },
+                },
+                required: ['question', 'intent', 'answerGuide'],
+              },
+            },
+          },
+          required: ['resumeKeyPoints', 'interviewQuestions'],
+        },
+      },
+    });
+
+    const rawText = response.text;
+    if (!rawText) {
+      return res.status(500).json({ error: 'AI 응답이 비어 있습니다.' });
+    }
+
+    const cleanedText = rawText
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    const parsed = JSON.parse(cleanedText);
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error('Error in /api/ai-interview-prep:', error);
+    return res.status(500).json({
+      error: error?.message || '면접 준비 생성 중 오류가 발생했습니다.',
+    });
+  }
+});
+
+// -------------------------------------------------------------
+// Endpoint 7: POST /api/ai-resume-draft (Gemini 1번 문항 500자 초안 작성)
+// -------------------------------------------------------------
+app.post('/api/ai-resume-draft', async (req, res) => {
+  try {
+    const {
+      jobTitle,
+      company,
+      field,
+      required,
+      preferred,
+      userGpa,
+      userMajors,
+      userSkills,
+      userCertificates,
+    } = req.body;
+
+    if (!jobTitle || !company) {
+      return res.status(400).json({ error: '공고 정보가 부족합니다.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: '서버에 GEMINI_API_KEY가 설정되어 있지 않습니다.' });
+    }
+
+    const prompt = `당신은 대한민국 최고 수준의 모빌리티 대기업/유니콘(현대차, 포티투닷, LG엔솔, 모셔널 등) 채용 전문 자기소개서 수석 컨설턴트입니다.
+지원자의 실제 보유 스펙과 대상 기업 및 직무의 핵심 요구사항을 분석하여, 서류 전형 통과율을 극대화할 수 있는
+[1번 항목: 지원 동기 및 본인이 기여할 수 있는 직무 역량] 자기소개서 초안을 약 500자(공백 포함 450~550자) 분량으로 작성해주세요.
+
+[기업 및 채용 포지션 정보]
+- 회사명: ${company}
+- 지원 직무: ${jobTitle}
+- 세부 분야: ${field || '미래 모빌리티'}
+- 필수 요건: ${(required || []).join(', ') || '관련 역량 보유자'}
+- 우대 요건: ${(preferred || []).join(', ') || '실무 및 프로젝트 경험자'}
+
+[지원자의 현재 스펙]
+- 전공: ${(userMajors || []).join(', ') || '전공'}
+- 학점: ${userGpa ? `${userGpa} / 4.5` : '우수'}
+- 보유 기술: ${(userSkills || []).join(', ') || 'C++, Python 등'}
+- 보유 자격증: ${(userCertificates || []).join(', ') || '관련 자격증'}
+
+[작성 원칙]
+1. 반드시 두괄식 소제목과 함께 첫 문장에서 지원 동기와 목표를 명확히 제시하세요.
+2. 지원자가 보유한 기술(${((userSkills || []).slice(0, 3)).join(', ') || '핵심 기술'})을 공고의 필수/우대 사항과 자연스럽게 결합하여 실질적인 기여 방안을 서술하세요.
+3. 분량은 반드시 공백 포함 450자 ~ 550자 내외로 완성도 높게 작성하세요.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        systemInstruction:
+          '모빌리티 채용 공고에 최적화된 500자 분량의 고품질 자기소개서 지원동기 초안을 JSON 형태로 반환합니다.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            draft: {
+              type: Type.STRING,
+              description: '완성된 약 500자 분량의 자기소개서 지원동기 및 직무역량 초안',
+            },
+            wordCount: {
+              type: Type.INTEGER,
+              description: '공백 포함 글자 수',
+            },
+            keyStrengthsUsed: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '초안에 반영된 지원자의 핵심 강점 키워드 3가지',
+            },
+          },
+          required: ['draft', 'wordCount', 'keyStrengthsUsed'],
+        },
+      },
+    });
+
+    const rawText = response.text;
+    if (!rawText) {
+      return res.status(500).json({ error: 'AI 응답이 비어 있습니다.' });
+    }
+
+    const cleanedText = rawText
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    const parsed = JSON.parse(cleanedText);
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error('Error in /api/ai-resume-draft:', error);
+    return res.status(500).json({
+      error: error?.message || '자소서 초안 생성 중 오류가 발생했습니다.',
+    });
+  }
+});
+
+// -------------------------------------------------------------
+// Endpoint 8: POST /api/ai-resume-feedback (Gemini 자소서 첨삭 및 진단)
+// -------------------------------------------------------------
+app.post('/api/ai-resume-feedback', async (req, res) => {
+  try {
+    const { resumeText, jobTitle, company, field, required, preferred } = req.body;
+
+    if (!resumeText || typeof resumeText !== 'string' || !resumeText.trim()) {
+      return res.status(400).json({ error: '첨삭할 자기소개서 본문을 입력해주세요.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: '서버에 GEMINI_API_KEY가 설정되어 있지 않습니다.' });
+    }
+
+    const prompt = `당신은 ${company}의 채용 서류 평가를 전담하는 수석 기술 면접관이자 인사 평가 전문가입니다.
+지원자가 작성한 아래 자기소개서 본문을 꼼꼼히 검토하고, 서류 합격 가능성을 높일 수 있는 정밀 진단 및 첨삭을 제공해주세요.
+
+[채용 대상 정보]
+- 회사: ${company || '모빌리티 기업'}
+- 직무: ${jobTitle || '모빌리티 엔지니어'}
+- 분야: ${field || '모빌리티'}
+- 필수 요건: ${(required || []).join(', ') || '정보 없음'}
+- 우대 요건: ${(preferred || []).join(', ') || '정보 없음'}
+
+[지원자가 작성한 자기소개서 본문]
+${resumeText.trim()}
+
+[진단 및 피드백 지침]
+1. fitScore: 이 공고 기준 직무 적합도 점수(0~100점 사이 정수).
+2. strengths: 잘 작성된 점 2~3가지를 구체적 근거와 함께 제시.
+3. improvements: 반드시 개선해야 할 점 2~3가지(예: 직무 키워드 보강, 수치화된 성과 표현, 두괄식 재구성 등).
+4. revisedDraft: 지원자의 본문 취지를 유지하면서, 위 개선점을 완벽히 반영하여 합격률을 극대화한 'AI 수정 추천 모범 답안'.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        systemInstruction:
+          '모빌리티 자기소개서를 평가하여 직무 적합도 점수, 강점/보완점, 수정 모범답안을 포함한 정확한 JSON 객체로 응답합니다.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            fitScore: {
+              type: Type.INTEGER,
+              description: '직무 적합도 점수 (0-100)',
+            },
+            strengths: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '잘된 점 2~3가지',
+            },
+            improvements: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '부족한 점 및 보완 제안 2~3가지',
+            },
+            revisedDraft: {
+              type: Type.STRING,
+              description: 'AI가 업그레이드한 최종 추천 모범 답안',
+            },
+          },
+          required: ['fitScore', 'strengths', 'improvements', 'revisedDraft'],
+        },
+      },
+    });
+
+    const rawText = response.text;
+    if (!rawText) {
+      return res.status(500).json({ error: 'AI 응답이 비어 있습니다.' });
+    }
+
+    const cleanedText = rawText
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    const parsed = JSON.parse(cleanedText);
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error('Error in /api/ai-resume-feedback:', error);
+    return res.status(500).json({
+      error: error?.message || '자소서 첨삭 중 오류가 발생했습니다.',
+    });
+  }
+});
+
 // Vite middleware for dev or static serving for production
 const isProduction = process.env.NODE_ENV === 'production';
 

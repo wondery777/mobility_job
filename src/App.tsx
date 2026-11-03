@@ -206,6 +206,15 @@ export default function App() {
     }
   });
 
+  // User GPA state for Spec Benchmark & AI Resume Assistant
+  const [userGpa, setUserGpa] = useState<string>(() => {
+    try {
+      return localStorage.getItem('mobility_job_gpa_v1') || '3.85';
+    } catch {
+      return '3.85';
+    }
+  });
+
   // Sync theme to HTML root & body
   useEffect(() => {
     if (isDarkMode) {
@@ -795,6 +804,8 @@ export default function App() {
               onUpdateMyMajors={setMyMajors}
               customMajors={customMajors}
               onUpdateCustomMajors={setCustomMajors}
+              userGpa={userGpa}
+              onUpdateUserGpa={setUserGpa}
               viewMode={viewMode}
               notificationSettings={notificationSettings}
               onUpdateNotificationSettings={setNotificationSettings}
@@ -866,6 +877,7 @@ export default function App() {
         mySkills={mySkills}
         myCertificates={myCertificates}
         myMajors={myMajors}
+        userGpa={userGpa}
         onOpenSourceUrl={handleOpenSourceUrl}
         viewMode={viewMode}
       />

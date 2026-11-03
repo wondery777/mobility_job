@@ -421,3 +421,123 @@ export function setLastSyncTime(timeIso: string): void {
     console.error(e);
   }
 }
+
+// -------------------------------------------------------------
+// 6. Gemini Interview & Resume Prep Service
+// -------------------------------------------------------------
+
+export interface ResumeKeyPoint {
+  keyword: string;
+  tip: string;
+}
+
+export interface InterviewQuestionItem {
+  question: string;
+  intent: string;
+  answerGuide: string;
+}
+
+export interface AiInterviewPrepResponse {
+  resumeKeyPoints: ResumeKeyPoint[];
+  interviewQuestions: InterviewQuestionItem[];
+}
+
+export async function fetchAiInterviewPrep(params: {
+  jobTitle: string;
+  company: string;
+  field: string;
+  userSkills?: string[];
+  userMajors?: string[];
+  required?: string[];
+  preferred?: string[];
+}): Promise<AiInterviewPrepResponse> {
+  const res = await fetch('/api/ai-interview-prep', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let msg = 'AI 자소서/면접 질문 생성 중 오류가 발생했습니다.';
+    try {
+      const err = await res.json();
+      if (err?.error) msg = err.error;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  return await res.json();
+}
+
+// -------------------------------------------------------------
+// 7. Gemini Resume Draft & Feedback Service
+// -------------------------------------------------------------
+
+export interface AiResumeDraftResponse {
+  draft: string;
+  wordCount: number;
+  keyStrengthsUsed: string[];
+}
+
+export interface AiResumeFeedbackResponse {
+  fitScore: number;
+  strengths: string[];
+  improvements: string[];
+  revisedDraft: string;
+}
+
+export async function fetchAiResumeDraft(params: {
+  jobTitle: string;
+  company: string;
+  field: string;
+  required?: string[];
+  preferred?: string[];
+  userGpa?: string;
+  userMajors?: string[];
+  userSkills?: string[];
+  userCertificates?: string[];
+}): Promise<AiResumeDraftResponse> {
+  const res = await fetch('/api/ai-resume-draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let msg = '자소서 초안 생성 중 오류가 발생했습니다.';
+    try {
+      const err = await res.json();
+      if (err?.error) msg = err.error;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  return await res.json();
+}
+
+export async function fetchAiResumeFeedback(params: {
+  resumeText: string;
+  jobTitle: string;
+  company: string;
+  field: string;
+  required?: string[];
+  preferred?: string[];
+}): Promise<AiResumeFeedbackResponse> {
+  const res = await fetch('/api/ai-resume-feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let msg = '자소서 첨삭 및 진단 중 오류가 발생했습니다.';
+    try {
+      const err = await res.json();
+      if (err?.error) msg = err.error;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  return await res.json();
+}
+

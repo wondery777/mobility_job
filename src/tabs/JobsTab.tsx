@@ -11,12 +11,16 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Layers,
+  Sparkles,
+  Check,
 } from 'lucide-react';
-import { Job, MOBILITY_FIELDS } from '../data';
+import { Job, MOBILITY_FIELDS, MobilityFieldType } from '../data';
 import { Banner } from '../components/Banner';
 import { JobCard } from '../components/JobCard';
 import { JobCardSkeleton } from '../components/SkeletonLoader';
 import { SyncStatusBar } from '../components/SyncStatusBar';
+import { CompareJobsModal } from '../components/CompareJobsModal';
 import {
   RegionBottomSheet,
   RegionFilterState,
@@ -31,6 +35,10 @@ interface JobsTabProps {
   onSelectJob: (job: Job) => void;
   selectedField: string;
   onSelectField: (field: string) => void;
+  mySkills?: string[];
+  myCertificates?: string[];
+  myMajors?: string[];
+  onOpenSourceUrl?: (url: string, title: string) => void;
   viewMode?: 'mobile' | 'web';
   isLoading?: boolean;
   isRefreshing?: boolean;
@@ -42,15 +50,20 @@ interface JobsTabProps {
 export type CareerFilter = '전체' | '신입' | '경력' | '경력무관';
 export type SortOption = '최신순' | '마감임박순';
 export type PageSizeOption = 5 | 10 | 'all';
+export type BenefitFilterOption = '전체' | '초봉5000' | '재택근무' | '탄력근무' | '스톡옵션';
 
 const ALL_FIELDS = [
   '전체',
-  '자율주행',
-  '전기차·배터리',
-  'UAM·드론',
-  '모빌리티 서비스',
-  '차량용 SW·반도체',
-  '자동차 부품',
+  '자율주행 & 로보틱스',
+  'SDV & 차량용 SW',
+  '전기차·배터리 & 충전 인프라',
+  'UAM · 드론 & 항공우주',
+  'C-ITS & 스마트시티 관제',
+  '모빌리티 서비스 & MaaS',
+  '차체·부품 & 신소재',
+  '스마트 해양 & 자율운항',
+  '스마트 물류 & 풀필먼트',
+  '에너지 & hydrogen',
 ];
 
 export const JobsTab: React.FC<JobsTabProps> = ({
@@ -60,6 +73,10 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   onSelectJob,
   selectedField,
   onSelectField,
+  mySkills = [],
+  myCertificates = [],
+  myMajors = [],
+  onOpenSourceUrl = (url) => window.open(url, '_blank'),
   viewMode = 'mobile',
   isLoading = false,
   isRefreshing = false,
@@ -69,6 +86,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [careerFilter, setCareerFilter] = useState<CareerFilter>('전체');
+  const [benefitFilter, setBenefitFilter] = useState<BenefitFilterOption>('전체');
   const [sortOption, setSortOption] = useState<SortOption>('최신순');
   const [pageSize, setPageSize] = useState<PageSizeOption>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -78,17 +96,35 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     districtMap: {},
   });
 
+  // Compare Jobs states
+  const [compareJobIds, setCompareJobIds] = useState<string[]>([]);
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+
   const jobListTopRef = useRef<HTMLDivElement>(null);
 
-  // Reset to page 1 whenever filters or sorting change
+  // Reset to page 1 whenever filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedField, careerFilter, regionFilter, sortOption, pageSize]);
+  }, [searchQuery, selectedField, careerFilter, benefitFilter, regionFilter, sortOption, pageSize]);
+
+  // Handle Toggle Compare
+  const handleToggleCompare = (jobId: string) => {
+    setCompareJobIds((prev) => {
+      if (prev.includes(jobId)) {
+        return prev.filter((id) => id !== jobId);
+      }
+      if (prev.length >= 3) {
+        alert('공고는 최대 3개까지 한 번에 비교할 수 있습니다.');
+        return prev;
+      }
+      return [...prev, jobId];
+    });
+  };
 
   // Filter evaluation logic
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
-      // 1. Keyword search (company, title, skills)
+      // 1. Keyword search (company, title, skills, region)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesCompany = job.company.toLowerCase().includes(q);
@@ -100,13 +136,21 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         }
       }
 
-      // 2. Field filter
-      if (selectedField !== '전체' && job.field !== selectedField) {
-        return false;
+      // 2. Field filter (support both exact match and legacy aliases)
+      if (selectedField !== '전체') {
+        const fieldMatch =
+          job.field === selectedField ||
+          (selectedField === '자율주행 & 로보틱스' && job.field === '자율주행') ||
+          (selectedField === 'SDV & 차량용 SW' && job.field === '차량용 SW·반도체') ||
+          (selectedField === '전기차·배터리 & 충전 인프라' && job.field === '전기차·배터리') ||
+          (selectedField === 'UAM · 드론 & 항공우주' && job.field === 'UAM·드론') ||
+          (selectedField === '모빌리티 서비스 & MaaS' && job.field === '모빌리티 서비스') ||
+          (selectedField === '차체·부품 & 신소재' && job.field === '자동차 부품');
+
+        if (!fieldMatch) return false;
       }
 
       // 3. Career filter
-      // 규칙: "신입·경력" 공고는 신입과 경력 양쪽에 모두 표시, "경력"은 경력무관 제외
       if (careerFilter === '신입') {
         const isEntry = job.level === '신입' || job.level === '신입·경력';
         if (!isEntry) return false;
@@ -119,14 +163,39 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         if (job.level !== '경력 무관') return false;
       }
 
-      // 4. Region filter
+      // 4. Welfare & Salary Benefit filter
+      if (benefitFilter !== '전체') {
+        if (benefitFilter === '초봉5000') {
+          const isHighSalary =
+            (job.salaryMin && job.salaryMin >= 5000) ||
+            job.salary?.includes('5,') ||
+            job.salary?.includes('6,') ||
+            job.benefits?.some((b) => b.includes('5,') || b.includes('5,000') || b.includes('5,400') || b.includes('5,200') || b.includes('5,300'));
+          if (!isHighSalary) return false;
+        } else if (benefitFilter === '재택근무') {
+          const hasRemote = job.benefits?.some((b) => b.includes('재택'));
+          if (!hasRemote) return false;
+        } else if (benefitFilter === '탄력근무') {
+          const hasFlexible = job.benefits?.some(
+            (b) => b.includes('탄력') || b.includes('시차') || b.includes('유연')
+          );
+          if (!hasFlexible) return false;
+        } else if (benefitFilter === '스톡옵션') {
+          const hasStock =
+            job.benefits?.some((b) => b.includes('스톡옵션')) ||
+            job.salary?.includes('스톡옵션');
+          if (!hasStock) return false;
+        }
+      }
+
+      // 5. Region filter
       if (!matchesRegionFilter(job.region, regionFilter)) {
         return false;
       }
 
       return true;
     });
-  }, [jobs, searchQuery, selectedField, careerFilter, regionFilter]);
+  }, [jobs, searchQuery, selectedField, careerFilter, benefitFilter, regionFilter]);
 
   // Sort logic
   const sortedJobs = useMemo(() => {
@@ -136,7 +205,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
       });
     }
-    // 기본 '최신순': 원래 배열 순서 유지
     return list;
   }, [filteredJobs, sortOption]);
 
@@ -181,19 +249,26 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     setSearchQuery('');
     onSelectField('전체');
     setCareerFilter('전체');
+    setBenefitFilter('전체');
     setSortOption('최신순');
     setPageSize(5);
     setCurrentPage(1);
     setRegionFilter({ selectedProvinces: [], districtMap: {} });
+    setCompareJobIds([]);
   };
 
   const hasActiveFilters =
     searchQuery.trim() !== '' ||
     selectedField !== '전체' ||
     careerFilter !== '전체' ||
+    benefitFilter !== '전체' ||
     sortOption !== '최신순' ||
     pageSize !== 5 ||
     isRegionActive;
+
+  const jobsToCompare = useMemo(() => {
+    return jobs.filter((j) => compareJobIds.includes(j.id));
+  }, [jobs, compareJobIds]);
 
   return (
     <div className="space-y-3 pb-8">
@@ -233,7 +308,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         </div>
       </div>
 
-      {/* Field Chips (줄바꿈되어 모두 보이게 - flex flex-wrap) */}
+      {/* 10대 모빌리티 분야 칩 (Field Chips - 줄바꿈 flex-wrap) */}
       <div className="px-3">
         <div className="flex flex-wrap gap-1.5">
           {ALL_FIELDS.map((fieldName) => {
@@ -256,9 +331,9 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         </div>
       </div>
 
-      {/* Filter Bar: [경력: 전체/신입/경력/경력무관] [📍지역] [정렬: 최신순/마감임박순] [초기화] [공고 N건] */}
+      {/* Filter Bar: [경력: 전체/신입/경력] [📍지역] + 💼 [연봉·복지 스마트 필터] */}
       <div className="px-3">
-        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2.5">
+        <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2.5">
           <div className="flex items-center justify-between gap-1.5 flex-wrap">
             {/* Career Selector */}
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[11px]">
@@ -294,8 +369,35 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             </button>
           </div>
 
+          {/* 💼 연봉 및 복지 혜택 필터 (Job Benefits Smart Filter) */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[11px]">
+            <span className="text-slate-400 text-[10px] shrink-0 font-medium mr-0.5">
+              복지필터:
+            </span>
+            {[
+              { id: '전체', label: '전체 복지' },
+              { id: '초봉5000', label: '💰 초봉 5,000만+' },
+              { id: '재택근무', label: '🏠 재택가능' },
+              { id: '탄력근무', label: '⏰ 탄력근무' },
+              { id: '스톡옵션', label: '🚀 스톡옵션' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setBenefitFilter(item.id as BenefitFilterOption)}
+                className={`px-2 py-0.5 rounded-md shrink-0 font-semibold border transition-all ${
+                  benefitFilter === item.id
+                    ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                    : 'bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs flex-wrap gap-2">
-            {/* Count, Page info & Reset */}
+            {/* Count & Reset */}
             <div className="flex items-center gap-2">
               <span className="font-bold text-slate-900 dark:text-white">
                 공고 <span className="text-blue-600 dark:text-blue-400">{totalItems}</span>건
@@ -318,71 +420,45 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Page size toggle */}
+              {/* Page size selector */}
               <div className="flex items-center gap-1 text-[11px]">
-                <span className="text-slate-400 hidden sm:inline">보기:</span>
-                {([5, 10, 'all'] as const).map((size) => (
-                  <button
-                    key={String(size)}
-                    type="button"
-                    onClick={() => {
-                      setPageSize(size);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                      pageSize === size
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-bold'
-                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    {size === 'all' ? '전체' : `${size}개`}
-                  </button>
-                ))}
+                <span className="text-slate-400">보기:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPageSize(v === 'all' ? 'all' : Number(v) as 5 | 10);
+                  }}
+                  className="bg-transparent text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer"
+                >
+                  <option value={5} className="dark:bg-slate-900">5개씩</option>
+                  <option value={10} className="dark:bg-slate-900">10개씩</option>
+                  <option value="all" className="dark:bg-slate-900">전체</option>
+                </select>
               </div>
 
-              {/* Sort Toggle: 최신순 / 마감임박순 */}
+              {/* Sort selector */}
               <div className="flex items-center gap-1 text-[11px]">
                 <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                <button
-                  type="button"
-                  onClick={() => setSortOption('최신순')}
-                  className={`px-1.5 py-0.5 rounded ${
-                    sortOption === '최신순'
-                      ? 'font-bold text-blue-600 dark:text-blue-400'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
+                <select
+                  value={sortOption}
+                  onChange={(e) => setSortOption(e.target.value as SortOption)}
+                  className="bg-transparent text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer"
                 >
-                  최신순
-                </button>
-                <span className="text-slate-300 dark:text-slate-700">|</span>
-                <button
-                  type="button"
-                  onClick={() => setSortOption('마감임박순')}
-                  className={`px-1.5 py-0.5 rounded ${
-                    sortOption === '마감임박순'
-                      ? 'font-bold text-blue-600 dark:text-blue-400'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  마감임박순
-                </button>
+                  <option value="최신순" className="dark:bg-slate-900">최신순</option>
+                  <option value="마감임박순" className="dark:bg-slate-900">마감임박순</option>
+                </select>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Anchor for scrolling back to top of job list */}
-      <div ref={jobListTopRef} className="scroll-mt-4" />
+      {/* Target anchor for smooth scrolling on page change */}
+      <div ref={jobListTopRef} />
 
-      {/* Jobs List (Paginated) */}
-      <div
-        className={`px-3 ${
-          viewMode === 'web'
-            ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'
-            : 'space-y-2.5'
-        }`}
-      >
+      {/* Job Card List */}
+      <div className="px-3 space-y-2.5">
         {isLoading ? (
           <>
             <JobCardSkeleton />
@@ -397,32 +473,35 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               isBookmarked={bookmarkedJobIds.includes(job.id)}
               onToggleBookmark={onToggleBookmark}
               onClick={() => onSelectJob(job)}
+              isSelectedForCompare={compareJobIds.includes(job.id)}
+              onToggleCompare={handleToggleCompare}
             />
           ))
         ) : (
-          <div className="p-8 rounded-[14px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2 col-span-full">
+          <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-[14px] border border-slate-200 dark:border-slate-800 space-y-2">
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-              조건에 맞는 채용 공고가 없습니다.
+              조건에 맞는 공고가 없습니다.
             </p>
             <p className="text-xs text-slate-400">
-              선택한 분야, 경력 조건 또는 지역 필터를 조정해 보세요.
+              필터를 변경하거나 검색어를 초기화해보세요.
             </p>
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="mt-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer active:scale-95"
-            >
-              필터 초기화
-            </button>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="mt-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+              >
+                필터 초기화
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Pagination Navigation Bar */}
-      {totalItems > 0 && totalPages > 1 && (
+      {/* Pagination Bar */}
+      {!isLoading && pageSize !== 'all' && totalPages > 1 && (
         <div className="px-3 pt-3 flex flex-col items-center gap-2">
-          <div className="flex items-center justify-center gap-1 select-none">
-            {/* First Page Button */}
+          <div className="flex items-center justify-center gap-1 select-none flex-wrap">
             <button
               type="button"
               onClick={() => handlePageChange(1)}
@@ -434,7 +513,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               <ChevronsLeft className="w-4 h-4" />
             </button>
 
-            {/* Previous Page Button */}
             <button
               type="button"
               onClick={() => handlePageChange(safeCurrentPage - 1)}
@@ -446,7 +524,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            {/* Page Number Buttons */}
             <div className="flex items-center gap-1 mx-1">
               {pageNumbers.map((p, idx) => {
                 if (p === 'ellipsis') {
@@ -474,7 +551,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               })}
             </div>
 
-            {/* Next Page Button */}
             <button
               type="button"
               onClick={() => handlePageChange(safeCurrentPage + 1)}
@@ -486,7 +562,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               <ChevronRight className="w-4 h-4" />
             </button>
 
-            {/* Last Page Button */}
             <button
               type="button"
               onClick={() => handlePageChange(totalPages)}
@@ -500,9 +575,49 @@ export const JobsTab: React.FC<JobsTabProps> = ({
           </div>
 
           <div className="text-[11px] text-slate-400 font-medium">
-            {safeCurrentPage} / {totalPages} 페이지 (총 {totalItems}개 공고 중 {startIndex + 1} - {endIndex}번째 표시)
+            {safeCurrentPage} / {totalPages} 페이지 (총 {totalItems}개 공고 중 {startIndex + 1} - {endIndex}번째)
           </div>
         </div>
+      )}
+
+      {/* 🎯 Floating Bottom Dock: 공고 비교하기 (Compare Jobs Dock) */}
+      {compareJobIds.length >= 2 && (
+        <div className="fixed bottom-18 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none animate-in slide-in-from-bottom-5 duration-200">
+          <div className="pointer-events-auto bg-slate-900/95 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl border border-blue-500/50 flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+              <Layers className="w-4 h-4 text-cyan-400" />
+              <span>선택 공고 {compareJobIds.length}개</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsCompareModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-1"
+            >
+              <span>1:1 비교하기 ›</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCompareJobIds([])}
+              className="text-[11px] text-slate-400 hover:text-white underline pl-1"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Compare Modal */}
+      {isCompareModalOpen && (
+        <CompareJobsModal
+          jobs={jobsToCompare}
+          onClose={() => setIsCompareModalOpen(false)}
+          mySkills={mySkills}
+          myCertificates={myCertificates}
+          myMajors={myMajors}
+          onSelectJob={onSelectJob}
+          onOpenSourceUrl={onOpenSourceUrl}
+          viewMode={viewMode}
+        />
       )}
 
       {/* Region Bottom Sheet Modal */}
