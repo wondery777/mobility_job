@@ -1,12 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { Search, X, ChevronRight, Newspaper } from 'lucide-react';
+import { Search, X, ChevronRight, Newspaper, RefreshCw, Rss } from 'lucide-react';
 import { NewsItem, MOBILITY_FIELDS } from '../data';
 import { getFieldIcon } from '../components/FieldIcons';
+import { NewsCardSkeleton } from '../components/SkeletonLoader';
+import { formatFriendlyTime } from '../services/api';
 
 interface NewsTabProps {
   newsList: NewsItem[];
   onOpenNewsUrl: (url: string, title: string) => void;
   viewMode?: 'mobile' | 'web';
+  isLoading?: boolean;
+  isRefreshing?: boolean;
+  lastUpdated?: string | null;
+  onRefresh?: () => void;
 }
 
 const ALL_FIELDS = [
@@ -23,6 +29,10 @@ export const NewsTab: React.FC<NewsTabProps> = ({
   newsList,
   onOpenNewsUrl,
   viewMode = 'mobile',
+  isLoading = false,
+  isRefreshing = false,
+  lastUpdated = null,
+  onRefresh,
 }) => {
   const [selectedField, setSelectedField] = useState('전체');
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,23 +59,48 @@ export const NewsTab: React.FC<NewsTabProps> = ({
   return (
     <div className="space-y-3 px-3 py-3 pb-8">
       {/* Tab Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
             <Newspaper className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-base font-extrabold text-slate-900 dark:text-white">
-              모빌리티 최신 뉴스
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-extrabold text-slate-900 dark:text-white">
+                모빌리티 최신 뉴스
+              </h1>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200/50 dark:border-blue-800">
+                <Rss className="w-2.5 h-2.5 text-amber-500" />
+                구글 RSS 실시간
+              </span>
+            </div>
             <p className="text-[11px] text-slate-400">
-              기술 트렌드와 산업 동향을 한눈에 파악하세요
+              기술 트렌드와 산업 동향을 실시간으로 확인하세요
             </p>
           </div>
         </div>
-        <span className="text-xs font-semibold text-slate-400">
-          총 {filteredNews.length}건
-        </span>
+
+        <div className="flex items-center gap-2">
+          {lastUpdated && (
+            <span className="text-[10px] text-slate-400 hidden sm:inline">
+              {formatFriendlyTime(lastUpdated)} 갱신
+            </span>
+          )}
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all shadow-2xs disabled:opacity-50 cursor-pointer active:scale-95"
+            >
+              <RefreshCw className={`w-3 h-3 text-blue-600 dark:text-blue-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? '갱신 중...' : '뉴스 새로고침'}</span>
+            </button>
+          )}
+          <span className="text-xs font-semibold text-slate-400">
+            총 {filteredNews.length}건
+          </span>
+        </div>
       </div>
 
       {/* Search Input */}
@@ -117,7 +152,14 @@ export const NewsTab: React.FC<NewsTabProps> = ({
             : 'space-y-2.5'
         }`}
       >
-        {filteredNews.length > 0 ? (
+        {isLoading ? (
+          <>
+            <NewsCardSkeleton />
+            <NewsCardSkeleton />
+            <NewsCardSkeleton />
+            <NewsCardSkeleton />
+          </>
+        ) : filteredNews.length > 0 ? (
           filteredNews.map((news) => {
             const fieldDef = MOBILITY_FIELDS.find((f) => f.name === news.field);
 

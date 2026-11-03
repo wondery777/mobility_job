@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
   X,
@@ -7,10 +7,16 @@ import {
   RotateCcw,
   SlidersHorizontal,
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { Job, MOBILITY_FIELDS } from '../data';
 import { Banner } from '../components/Banner';
 import { JobCard } from '../components/JobCard';
+import { JobCardSkeleton } from '../components/SkeletonLoader';
+import { SyncStatusBar } from '../components/SyncStatusBar';
 import {
   RegionBottomSheet,
   RegionFilterState,
@@ -26,10 +32,16 @@ interface JobsTabProps {
   selectedField: string;
   onSelectField: (field: string) => void;
   viewMode?: 'mobile' | 'web';
+  isLoading?: boolean;
+  isRefreshing?: boolean;
+  lastUpdated?: string | null;
+  onRefresh?: () => void;
+  onOpenAiParser?: () => void;
 }
 
 export type CareerFilter = '전체' | '신입' | '경력' | '경력무관';
 export type SortOption = '최신순' | '마감임박순';
+export type PageSizeOption = 5 | 10 | 'all';
 
 const ALL_FIELDS = [
   '전체',
@@ -49,15 +61,29 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   selectedField,
   onSelectField,
   viewMode = 'mobile',
+  isLoading = false,
+  isRefreshing = false,
+  lastUpdated = null,
+  onRefresh,
+  onOpenAiParser,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [careerFilter, setCareerFilter] = useState<CareerFilter>('전체');
   const [sortOption, setSortOption] = useState<SortOption>('최신순');
+  const [pageSize, setPageSize] = useState<PageSizeOption>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [isRegionSheetOpen, setIsRegionSheetOpen] = useState(false);
   const [regionFilter, setRegionFilter] = useState<RegionFilterState>({
     selectedProvinces: [],
     districtMap: {},
   });
+
+  const jobListTopRef = useRef<HTMLDivElement>(null);
+
+  // Reset to page 1 whenever filters or sorting change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedField, careerFilter, regionFilter, sortOption, pageSize]);
 
   // Filter evaluation logic
   const filteredJobs = useMemo(() => {
@@ -114,6 +140,40 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     return list;
   }, [filteredJobs, sortOption]);
 
+  // Pagination calculation
+  const totalItems = sortedJobs.length;
+  const numericPageSize = pageSize === 'all' ? (totalItems || 1) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalItems / numericPageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const startIndex = (safeCurrentPage - 1) * numericPageSize;
+  const endIndex = Math.min(startIndex + numericPageSize, totalItems);
+  const paginatedJobs = pageSize === 'all' ? sortedJobs : sortedJobs.slice(startIndex, endIndex);
+
+  // Generate page numbers with ellipsis
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | 'ellipsis')[] = [];
+    if (safeCurrentPage <= 3) {
+      pages.push(1, 2, 3, 4, 'ellipsis', totalPages);
+    } else if (safeCurrentPage >= totalPages - 2) {
+      pages.push(1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+    } else {
+      pages.push(1, 'ellipsis', safeCurrentPage - 1, safeCurrentPage, safeCurrentPage + 1, 'ellipsis', totalPages);
+    }
+    return pages;
+  }, [totalPages, safeCurrentPage]);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setCurrentPage(newPage);
+    if (jobListTopRef.current) {
+      jobListTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   const regionSummary = getRegionSummaryLabel(regionFilter);
   const isRegionActive = regionFilter.selectedProvinces.length > 0;
 
@@ -122,6 +182,8 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     onSelectField('전체');
     setCareerFilter('전체');
     setSortOption('최신순');
+    setPageSize(5);
+    setCurrentPage(1);
     setRegionFilter({ selectedProvinces: [], districtMap: {} });
   };
 
@@ -130,12 +192,24 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     selectedField !== '전체' ||
     careerFilter !== '전체' ||
     sortOption !== '최신순' ||
+    pageSize !== 5 ||
     isRegionActive;
 
   return (
     <div className="space-y-3 pb-8">
       {/* Top Banner with SVG and animation */}
       <Banner />
+
+      {/* Real-time Data Sync Status Bar & AI Parser Trigger */}
+      {onRefresh && onOpenAiParser && (
+        <SyncStatusBar
+          lastUpdated={lastUpdated}
+          isRefreshing={isRefreshing}
+          onRefresh={onRefresh}
+          onOpenAiParser={onOpenAiParser}
+          label="모빌리티 실제 채용 데이터"
+        />
+      )}
 
       {/* Search Bar */}
       <div className="px-3">
@@ -184,7 +258,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
 
       {/* Filter Bar: [경력: 전체/신입/경력/경력무관] [📍지역] [정렬: 최신순/마감임박순] [초기화] [공고 N건] */}
       <div className="px-3">
-        <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
+        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2.5">
           <div className="flex items-center justify-between gap-1.5 flex-wrap">
             {/* Career Selector */}
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[11px]">
@@ -220,12 +294,17 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
-            {/* Count & Reset */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs flex-wrap gap-2">
+            {/* Count, Page info & Reset */}
             <div className="flex items-center gap-2">
               <span className="font-bold text-slate-900 dark:text-white">
-                공고 <span className="text-blue-600 dark:text-blue-400">{sortedJobs.length}</span>건
+                공고 <span className="text-blue-600 dark:text-blue-400">{totalItems}</span>건
               </span>
+              {totalItems > 0 && pageSize !== 'all' && (
+                <span className="text-[11px] text-slate-400">
+                  ({startIndex + 1}-{endIndex}건 / {safeCurrentPage}p)
+                </span>
+              )}
               {hasActiveFilters && (
                 <button
                   type="button"
@@ -238,38 +317,65 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               )}
             </div>
 
-            {/* Sort Toggle: 최신순 / 마감임박순 */}
-            <div className="flex items-center gap-1 text-[11px]">
-              <ArrowUpDown className="w-3 h-3 text-slate-400" />
-              <button
-                type="button"
-                onClick={() => setSortOption('최신순')}
-                className={`px-1.5 py-0.5 rounded ${
-                  sortOption === '최신순'
-                    ? 'font-bold text-blue-600 dark:text-blue-400'
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                최신순
-              </button>
-              <span className="text-slate-300 dark:text-slate-700">|</span>
-              <button
-                type="button"
-                onClick={() => setSortOption('마감임박순')}
-                className={`px-1.5 py-0.5 rounded ${
-                  sortOption === '마감임박순'
-                    ? 'font-bold text-blue-600 dark:text-blue-400'
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                마감임박순
-              </button>
+            <div className="flex items-center gap-3">
+              {/* Page size toggle */}
+              <div className="flex items-center gap-1 text-[11px]">
+                <span className="text-slate-400 hidden sm:inline">보기:</span>
+                {([5, 10, 'all'] as const).map((size) => (
+                  <button
+                    key={String(size)}
+                    type="button"
+                    onClick={() => {
+                      setPageSize(size);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                      pageSize === size
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-bold'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {size === 'all' ? '전체' : `${size}개`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort Toggle: 최신순 / 마감임박순 */}
+              <div className="flex items-center gap-1 text-[11px]">
+                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                <button
+                  type="button"
+                  onClick={() => setSortOption('최신순')}
+                  className={`px-1.5 py-0.5 rounded ${
+                    sortOption === '최신순'
+                      ? 'font-bold text-blue-600 dark:text-blue-400'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  최신순
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">|</span>
+                <button
+                  type="button"
+                  onClick={() => setSortOption('마감임박순')}
+                  className={`px-1.5 py-0.5 rounded ${
+                    sortOption === '마감임박순'
+                      ? 'font-bold text-blue-600 dark:text-blue-400'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  마감임박순
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Jobs List */}
+      {/* Anchor for scrolling back to top of job list */}
+      <div ref={jobListTopRef} className="scroll-mt-4" />
+
+      {/* Jobs List (Paginated) */}
       <div
         className={`px-3 ${
           viewMode === 'web'
@@ -277,8 +383,14 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             : 'space-y-2.5'
         }`}
       >
-        {sortedJobs.length > 0 ? (
-          sortedJobs.map((job) => (
+        {isLoading ? (
+          <>
+            <JobCardSkeleton />
+            <JobCardSkeleton />
+            <JobCardSkeleton />
+          </>
+        ) : paginatedJobs.length > 0 ? (
+          paginatedJobs.map((job) => (
             <JobCard
               key={job.id}
               job={job}
@@ -288,7 +400,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             />
           ))
         ) : (
-          <div className="p-8 rounded-[14px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
+          <div className="p-8 rounded-[14px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2 col-span-full">
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
               조건에 맞는 채용 공고가 없습니다.
             </p>
@@ -298,7 +410,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             <button
               type="button"
               onClick={handleResetFilters}
-              className="mt-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold"
+              className="mt-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer active:scale-95"
             >
               필터 초기화
             </button>
@@ -306,13 +418,100 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         )}
       </div>
 
+      {/* Pagination Navigation Bar */}
+      {totalItems > 0 && totalPages > 1 && (
+        <div className="px-3 pt-3 flex flex-col items-center gap-2">
+          <div className="flex items-center justify-center gap-1 select-none">
+            {/* First Page Button */}
+            <button
+              type="button"
+              onClick={() => handlePageChange(1)}
+              disabled={safeCurrentPage === 1}
+              title="첫 페이지"
+              aria-label="첫 페이지"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+
+            {/* Previous Page Button */}
+            <button
+              type="button"
+              onClick={() => handlePageChange(safeCurrentPage - 1)}
+              disabled={safeCurrentPage === 1}
+              title="이전 페이지"
+              aria-label="이전 페이지"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {/* Page Number Buttons */}
+            <div className="flex items-center gap-1 mx-1">
+              {pageNumbers.map((p, idx) => {
+                if (p === 'ellipsis') {
+                  return (
+                    <span key={`ell-${idx}`} className="px-1 text-slate-400 text-xs">
+                      …
+                    </span>
+                  );
+                }
+                const isCurrent = p === safeCurrentPage;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handlePageChange(p as number)}
+                    className={`min-w-8 h-8 px-2 rounded-lg text-xs font-semibold transition-all ${
+                      isCurrent
+                        ? 'bg-blue-600 text-white font-bold shadow-xs'
+                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Next Page Button */}
+            <button
+              type="button"
+              onClick={() => handlePageChange(safeCurrentPage + 1)}
+              disabled={safeCurrentPage === totalPages}
+              title="다음 페이지"
+              aria-label="다음 페이지"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            {/* Last Page Button */}
+            <button
+              type="button"
+              onClick={() => handlePageChange(totalPages)}
+              disabled={safeCurrentPage === totalPages}
+              title="마지막 페이지"
+              aria-label="마지막 페이지"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-medium">
+            {safeCurrentPage} / {totalPages} 페이지 (총 {totalItems}개 공고 중 {startIndex + 1} - {endIndex}번째 표시)
+          </div>
+        </div>
+      )}
+
       {/* Region Bottom Sheet Modal */}
       <RegionBottomSheet
         isOpen={isRegionSheetOpen}
         onClose={() => setIsRegionSheetOpen(false)}
         filterState={regionFilter}
         onApply={(newState) => setRegionFilter(newState)}
-        matchingCount={sortedJobs.length}
+        matchingCount={totalItems}
       />
     </div>
   );

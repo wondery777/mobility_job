@@ -52,6 +52,33 @@ export interface MobilityField {
   educationRecommend: string[];
 }
 
+export interface NotificationSettings {
+  enabled: boolean;
+  // 1. Deadline closing alert
+  deadlineAlertEnabled: boolean;
+  deadlineDays: number[]; // [0, 1, 3] (0: D-Day, 1: D-1, 3: D-3)
+  deadlineBookmarkedOnly: boolean;
+  // 2. New job alerts based on fields & technologies
+  newJobAlertEnabled: boolean;
+  alertFields: string[]; // e.g. ['자율주행', '차량용 SW·반도체']
+  alertSkills: string[]; // e.g. ['C++', 'Python', 'ROS']
+  // Additional preference options
+  alertTime: string; // e.g. "09:00"
+  soundEnabled: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  deadlineAlertEnabled: true,
+  deadlineDays: [3, 1, 0],
+  deadlineBookmarkedOnly: false,
+  newJobAlertEnabled: true,
+  alertFields: ['자율주행', '전기차·배터리', '차량용 SW·반도체'],
+  alertSkills: ['C++', 'Python', 'ROS', 'Linux'],
+  alertTime: '09:00',
+  soundEnabled: true,
+};
+
 export interface RegionDefinition {
   province: string;
   districts: string[];
@@ -515,6 +542,106 @@ export const SAMPLE_JOBS: Job[] = [
     salary: '신입 4,300만 원 / 경력직 별도 협의',
     department: '전동화구동선행설계팀',
     sourceUrl: 'https://careers.example.com/jobs/powertech-12',
+  },
+  {
+    id: 'job-13',
+    company: '현대오토에버 (가상)',
+    title: '차량 임베디드 사이버보안 및 OTA 무선 업데이트 플랫폼 개발',
+    field: '차량용 SW·반도체',
+    level: '신입·경력',
+    region: '서울 강남구',
+    deadline: '2026-11-09',
+    skills: ['C++', 'Linux', 'Git', 'CAN', 'AUTOSAR'],
+    summary: '차량 내/외부 통신 보안(ISO/SAE 21434 규격) 모듈 구현 및 차량 제어기 무선 펌웨어 업데이트(OTA) 시스템을 구축합니다.',
+    required: [
+      '컴퓨터공학, 정보보호학, 전자공학 학사 이상',
+      'C/C++ 기반 임베디드 리눅스 프로그래밍 역량',
+      '네트워크 보안(TLS, 암호화 알고리즘) 및 공개키 인프라(PKI) 이해'
+    ],
+    preferred: [
+      '차량 사이버보안 표준(UN R155/156) 관련 프로젝트 경험',
+      '관련 자격증: 정보처리기사, 정보보안기사'
+    ],
+    certificates: ['정보처리기사', '정보보안기사'],
+    majors: ['컴퓨터공학과', '소프트웨어학과', '전자공학과', '통신공학과'],
+    salary: '연봉 5,000만 ~ 6,500만 원',
+    department: '차량보안플랫폼팀',
+    sourceUrl: 'https://careers.example.com/jobs/autoever-13',
+  },
+  {
+    id: 'job-14',
+    company: '모빌리티X (가상)',
+    title: '도심 자율주행 로보택시 원격 관제 및 V2X 통신 엔지니어',
+    field: '자율주행',
+    level: '신입',
+    region: '경기 성남시',
+    deadline: '2026-11-15',
+    skills: ['Python', 'C++', 'Linux', 'ROS', 'Git'],
+    summary: '자율주행차와 스마트 인프라(RSU) 간 5G-V2X 초저지연 통신 및 비상 원격 제어 인터페이스를 개발합니다.',
+    required: [
+      '전자공학, 컴퓨터공학, 통신공학 전공자',
+      'C++ 또는 Python 네트워크 소켓 프로그래밍 이해',
+      'Linux 운영체제 환경 실무 경험'
+    ],
+    preferred: [
+      'V2X 통신 프로토콜(WAVE, C-V2X) 규격 이해자',
+      '관련 자격증: 무선설비기사, 정보통신기사'
+    ],
+    certificates: ['무선설비기사', '정보통신기사'],
+    majors: ['통신공학과', '전자공학과', '컴퓨터공학과', '소프트웨어학과'],
+    salary: '연봉 4,400만 ~ 5,000만 원',
+    department: 'V2X통신선행랩',
+    sourceUrl: 'https://careers.example.com/jobs/mobilityx-14',
+  },
+  {
+    id: 'job-15',
+    company: '스카이모빌리티 (가상)',
+    title: 'eVTOL 비행체 공력설계 및 비행제어 시뮬레이터 개발',
+    field: 'UAM·드론',
+    level: '경력 2년+',
+    region: '대전 유성구',
+    deadline: '2026-11-22',
+    skills: ['MATLAB', 'C++', 'ANSYS', 'CATIA', 'Linux'],
+    summary: '도심형 항공 모빌리티 비행체의 공력 특성 해석(CFD) 및 6자유도 비행 동역학 제어 모델 시뮬레이터를 개발합니다.',
+    required: [
+      '항공우주공학, 기계공학 석사 이상 또는 동등 경력',
+      '비행 동역학 및 자동비행제어 시스템(FCS) 이론 이해',
+      'MATLAB/Simulink 비행 시뮬레이션 모델링 역량'
+    ],
+    preferred: [
+      'eVTOL 틸트로터 또는 멀티로터 설계 프로젝트 경험',
+      '관련 자격증: 항공기사, 초경량비행장치 조종자'
+    ],
+    certificates: ['항공기사', '초경량비행장치 조종자'],
+    majors: ['항공우주공학과', '기계공학과', '제어계측공학과'],
+    salary: '연봉 5,500만 ~ 7,000만 원',
+    department: 'UAM비행체연구센터',
+    sourceUrl: 'https://careers.example.com/jobs/skymobility-15',
+  },
+  {
+    id: 'job-16',
+    company: '셀테크놀로지 (가상)',
+    title: '차세대 전고체 배터리 셀 전극 공정 및 수율 개선 엔지니어',
+    field: '전기차·배터리',
+    level: '신입',
+    region: '경기 화성시',
+    deadline: '2026-11-12',
+    skills: ['Excel', 'CATIA', 'MATLAB'],
+    summary: '고용량 전고체 배터리 양극/음극 극판 코팅, 압연 공정 최적화 및 셀 생산 파일럿 라인 수율 분석을 담당합니다.',
+    required: [
+      '화학공학, 신소재공학, 재료공학 학사 이상',
+      '2차전지 전극 소재(양극재, 고체전해질) 기초 특성 이해',
+      '데이터 기반 공정 조건 분석 능력'
+    ],
+    preferred: [
+      '배터리 공정 실습 또는 학부 연구생 경험자',
+      '관련 자격증: 화학분석기사, 화공기사'
+    ],
+    certificates: ['화학분석기사', '화공기사'],
+    majors: ['화학공학과', '신소재공학과'],
+    salary: '연봉 4,600만 ~ 5,200만 원',
+    department: '배터리공정개발실',
+    sourceUrl: 'https://careers.example.com/jobs/celltech-16',
   }
 ];
 

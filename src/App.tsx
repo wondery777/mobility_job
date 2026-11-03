@@ -15,6 +15,9 @@ import {
   Car,
   Smartphone,
   Monitor,
+  Bell,
+  BellRing,
+  X,
 } from 'lucide-react';
 import {
   SAMPLE_JOBS,
@@ -23,6 +26,8 @@ import {
   Job,
   NewsItem,
   MobilityField,
+  NotificationSettings,
+  DEFAULT_NOTIFICATION_SETTINGS,
 } from './data';
 import { JobsTab } from './tabs/JobsTab';
 import { NewsTab } from './tabs/NewsTab';
@@ -32,9 +37,30 @@ import { MyTab } from './tabs/MyTab';
 import { JobDetailModal } from './components/JobDetailModal';
 import { FieldDetailModal } from './components/FieldDetailModal';
 import { ExternalLinkModal } from './components/ExternalLinkModal';
+import { NotificationInboxModal } from './components/NotificationInboxModal';
+import { AiJobParserModal } from './components/AiJobParserModal';
+import {
+  fetchJobs,
+  fetchNews,
+  getNotificationsHistory,
+  markAllNotificationsAsRead,
+  clearAllNotifications,
+  markNotificationAsRead,
+  NotificationHistoryItem,
+  addNotificationHistory,
+  getLastSyncTime,
+} from './services/api';
 
 type TabType = 'jobs' | 'news' | 'calendar' | 'fields' | 'my';
 type ViewMode = 'mobile' | 'web';
+
+interface NotificationToast {
+  id: string;
+  type: 'deadline' | 'new_job' | 'test';
+  title: string;
+  message: string;
+  job?: Job;
+}
 
 const STORAGE_KEYS = {
   BOOKMARKS: 'mobility_job_bookmarks_v1',
@@ -44,14 +70,33 @@ const STORAGE_KEYS = {
   CUSTOM_CERTS: 'mobility_job_custom_certs_v1',
   MY_MAJORS: 'mobility_job_my_majors_v1',
   CUSTOM_MAJORS: 'mobility_job_custom_majors_v1',
+  NOTIFICATIONS: 'mobility_job_notifications_v1',
   THEME: 'mobility_job_theme_v1',
   VIEW_MODE: 'mobility_job_view_mode_v1',
 };
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('jobs');
-  const [jobs] = useState<Job[]>(SAMPLE_JOBS);
-  const [news] = useState<NewsItem[]>(SAMPLE_NEWS);
+  const [jobs, setJobs] = useState<Job[]>(SAMPLE_JOBS);
+  const [news, setNews] = useState<NewsItem[]>(SAMPLE_NEWS);
+
+  // Live Data & Sync state
+  const [isJobsLoading, setIsJobsLoading] = useState(false);
+  const [isJobsRefreshing, setIsJobsRefreshing] = useState(false);
+  const [lastJobsUpdated, setLastJobsUpdated] = useState<string | null>(() => getLastSyncTime());
+
+  const [isNewsLoading, setIsNewsLoading] = useState(false);
+  const [isNewsRefreshing, setIsNewsRefreshing] = useState(false);
+  const [lastNewsUpdated, setLastNewsUpdated] = useState<string | null>(null);
+
+  // Notifications Inbox state
+  const [notifications, setNotifications] = useState<NotificationHistoryItem[]>(() =>
+    getNotificationsHistory()
+  );
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
+
+  // AI Job Parser Modal state
+  const [isAiParserOpen, setIsAiParserOpen] = useState(false);
 
   // View Mode: 'mobile' (440px phone container) or 'web' (wide desktop dashboard)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -161,16 +206,51 @@ export default function App() {
     }
   });
 
-  // Sync theme to HTML root
+  // Sync theme to HTML root & body
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
       localStorage.setItem(STORAGE_KEYS.THEME, 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
       localStorage.setItem(STORAGE_KEYS.THEME, 'light');
     }
   }, [isDarkMode]);
+
+  // Initial Real Data Loading (Jobs & News)
+  useEffect(() => {
+    let isMounted = true;
+    const loadInitialData = async () => {
+      setIsJobsLoading(true);
+      setIsNewsLoading(true);
+      try {
+        const [jobRes, newsRes] = await Promise.all([
+          fetchJobs(false),
+          fetchNews(false),
+        ]);
+        if (isMounted) {
+          setJobs(jobRes.jobs);
+          setLastJobsUpdated(jobRes.lastUpdated);
+          setNews(newsRes.news);
+          setLastNewsUpdated(newsRes.lastUpdated);
+        }
+      } catch (err) {
+        console.warn('Initial data load error:', err);
+      } finally {
+        if (isMounted) {
+          setIsJobsLoading(false);
+          setIsNewsLoading(false);
+        }
+      }
+    };
+
+    loadInitialData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Persist View Mode
   useEffect(() => {
@@ -259,6 +339,195 @@ export default function App() {
     }
   }, [customMajors]);
 
+  // Notification settings state
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+      return saved ? JSON.parse(saved) : DEFAULT_NOTIFICATION_SETTINGS;
+    } catch {
+      return DEFAULT_NOTIFICATION_SETTINGS;
+    }
+  });
+
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [activeToast, setActiveToast] = useState<NotificationToast | null>(null);
+
+  // Check browser Notification permission on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    } else {
+      setNotificationPermission('unsupported');
+    }
+  }, []);
+
+  // Persist Notification settings
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.NOTIFICATIONS,
+        JSON.stringify(notificationSettings)
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }, [notificationSettings]);
+
+  // Request browser Notification permission
+  const handleRequestNotificationPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const res = await Notification.requestPermission();
+        setNotificationPermission(res);
+      } catch (e) {
+        console.warn('Notification permission request error:', e);
+      }
+    }
+  };
+
+  // Gentle audio chime for push notifications
+  const playChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {
+      // Audio autoplay policy
+    }
+  };
+
+  // Dispatch push notification test
+  const handleTriggerTestNotification = () => {
+    const matchingJob =
+      jobs.find(
+        (j) =>
+          notificationSettings.alertFields.length === 0 ||
+          notificationSettings.alertFields.includes(j.field)
+      ) || jobs[0];
+
+    if (notificationSettings.soundEnabled) {
+      playChime();
+    }
+
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
+      try {
+        new Notification(`[MobilityJob] ${matchingJob.company} 신규 채용 알림`, {
+          body: `${matchingJob.title} (${matchingJob.field}) 공고가 등록되었습니다.`,
+          icon: '/favicon.ico',
+        });
+      } catch {
+        // Fallback to in-app toast
+      }
+    }
+
+    setActiveToast({
+      id: String(Date.now()),
+      type: 'new_job',
+      title: `[맞춤 알림] ${matchingJob.company}`,
+      message: `${matchingJob.title} (${matchingJob.field}) 공고가 등록되었습니다.`,
+      job: matchingJob,
+    });
+
+    // Also persist into notification inbox
+    const updated = addNotificationHistory({
+      title: `[맞춤 알림] ${matchingJob.company}`,
+      message: `${matchingJob.title} (${matchingJob.field}) 공고가 등록되었습니다.`,
+      jobId: matchingJob.id,
+      type: 'new_job',
+    });
+    setNotifications(updated);
+  };
+
+  // Auto-dismiss active notification toast after 6 seconds
+  useEffect(() => {
+    if (activeToast) {
+      const timer = setTimeout(() => {
+        setActiveToast(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeToast]);
+
+  // Data Refresh Handlers
+  const handleRefreshJobs = async () => {
+    setIsJobsRefreshing(true);
+    try {
+      const res = await fetchJobs(true);
+      setJobs(res.jobs);
+      setLastJobsUpdated(res.lastUpdated);
+    } catch (err) {
+      console.error('Jobs refresh failed:', err);
+    } finally {
+      setIsJobsRefreshing(false);
+    }
+  };
+
+  const handleRefreshNews = async () => {
+    setIsNewsRefreshing(true);
+    try {
+      const res = await fetchNews(true);
+      setNews(res.news);
+      setLastNewsUpdated(res.lastUpdated);
+    } catch (err) {
+      console.error('News refresh failed:', err);
+    } finally {
+      setIsNewsRefreshing(false);
+    }
+  };
+
+  // AI Registered Job Added Handler
+  const handleJobAdded = (newJob: Job) => {
+    setJobs((prev) => [newJob, ...prev]);
+    setBookmarkedJobIds((prev) => [newJob.id, ...prev.filter((id) => id !== newJob.id)]);
+    setNotifications(getNotificationsHistory());
+    setActiveToast({
+      id: String(Date.now()),
+      type: 'new_job',
+      title: `[AI 공고 등록 완료] ${newJob.company}`,
+      message: `${newJob.title} 공고가 성공적으로 등록되었습니다.`,
+      job: newJob,
+    });
+    setSelectedJobForDetail(newJob);
+  };
+
+  // Notification Inbox Handlers
+  const handleMarkAllNotificationsAsRead = () => {
+    const updated = markAllNotificationsAsRead();
+    setNotifications(updated);
+  };
+
+  const handleClearAllNotifications = () => {
+    const updated = clearAllNotifications();
+    setNotifications(updated);
+  };
+
+  const handleSelectNotification = (item: NotificationHistoryItem) => {
+    const updated = markNotificationAsRead(item.id);
+    setNotifications(updated);
+    if (item.jobId) {
+      const targetJob = jobs.find((j) => j.id === item.jobId);
+      if (targetJob) {
+        setSelectedJobForDetail(targetJob);
+      }
+    }
+    setIsInboxOpen(false);
+  };
+
   // Toggle Bookmark
   const handleToggleBookmark = (jobId: string) => {
     setBookmarkedJobIds((prev) =>
@@ -288,14 +557,65 @@ export default function App() {
     { key: 'my' as TabType, label: 'MY', icon: User, badge: bookmarkedJobIds.length },
   ];
 
+  const unreadNotificationCount = notifications.filter((n) => !n.read).length;
+
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex justify-center items-start sm:py-4 transition-colors">
+    <div
+      className={`min-h-screen bg-slate-100 dark:bg-slate-950 flex justify-center items-start sm:py-4 transition-colors ${
+        isDarkMode ? 'dark' : ''
+      }`}
+    >
       {/* Screen Frame: Supports Mobile View (max-w-[440px]) and Web Wide View (max-w-6xl) */}
       <div
         className={`w-full ${
           viewMode === 'web' ? 'max-w-6xl' : 'max-w-[440px]'
         } min-h-screen sm:min-h-[920px] bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col sm:rounded-[24px] sm:shadow-2xl sm:border border-slate-200/80 dark:border-slate-800 overflow-hidden relative transition-all duration-300`}
       >
+        {/* In-App Simulated Push Notification Toast */}
+        {activeToast && (
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-[420px] bg-slate-900 text-white rounded-2xl p-3.5 shadow-2xl border border-slate-700/80 animate-in slide-in-from-top duration-300">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                <BellRing className="w-5 h-5 animate-bounce-subtle" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    {activeToast.title}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveToast(null)}
+                    className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-xs font-semibold text-slate-100 mt-1 line-clamp-2">
+                  {activeToast.message}
+                </p>
+                {activeToast.job && (
+                  <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-800">
+                    <span className="text-[10px] text-slate-400">
+                      마감: {activeToast.job.deadline} · {activeToast.job.region}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedJobForDetail(activeToast.job!);
+                        setActiveToast(null);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold transition-colors cursor-pointer active:scale-95 shadow-sm"
+                    >
+                      공고 바로가기
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Top App Header */}
         <header className="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/70 dark:border-slate-800 px-3.5 py-2.5 flex items-center justify-between gap-2">
           {/* Logo & Brand */}
@@ -350,6 +670,22 @@ export default function App() {
 
           {/* Header Action Controls */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Notification Inbox Button */}
+            <button
+              type="button"
+              onClick={() => setIsInboxOpen(true)}
+              aria-label="알림 보관함 열기"
+              title="알림 보관함 (마감 및 맞춤 공고 알림)"
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200/80 dark:border-slate-700 relative cursor-pointer"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center animate-pulse shadow-xs">
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                </span>
+              )}
+            </button>
+
             {/* View Mode Switcher: Mobile 440px vs Web Wide */}
             <button
               type="button"
@@ -361,7 +697,7 @@ export default function App() {
                   ? '웹 와이드 화면으로 전환'
                   : '모바일 440px 화면으로 전환'
               }
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200/80 dark:border-slate-700"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200/80 dark:border-slate-700 cursor-pointer"
             >
               {viewMode === 'mobile' ? (
                 <>
@@ -381,7 +717,7 @@ export default function App() {
               type="button"
               onClick={() => setIsDarkMode((prev) => !prev)}
               aria-label={isDarkMode ? '라이트 모드로 전환' : '다크 모드로 전환'}
-              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200/80 dark:border-slate-700"
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200/80 dark:border-slate-700 cursor-pointer"
             >
               {isDarkMode ? (
                 <Sun className="w-4 h-4 text-amber-400" />
@@ -403,6 +739,11 @@ export default function App() {
               selectedField={selectedField}
               onSelectField={setSelectedField}
               viewMode={viewMode}
+              isLoading={isJobsLoading}
+              isRefreshing={isJobsRefreshing}
+              lastUpdated={lastJobsUpdated}
+              onRefresh={handleRefreshJobs}
+              onOpenAiParser={() => setIsAiParserOpen(true)}
             />
           )}
 
@@ -411,6 +752,10 @@ export default function App() {
               newsList={news}
               onOpenNewsUrl={handleOpenSourceUrl}
               viewMode={viewMode}
+              isLoading={isNewsLoading}
+              isRefreshing={isNewsRefreshing}
+              lastUpdated={lastNewsUpdated}
+              onRefresh={handleRefreshNews}
             />
           )}
 
@@ -451,6 +796,11 @@ export default function App() {
               customMajors={customMajors}
               onUpdateCustomMajors={setCustomMajors}
               viewMode={viewMode}
+              notificationSettings={notificationSettings}
+              onUpdateNotificationSettings={setNotificationSettings}
+              onTriggerTestNotification={handleTriggerTestNotification}
+              notificationPermission={notificationPermission}
+              onRequestNotificationPermission={handleRequestNotificationPermission}
             />
           )}
 
@@ -544,6 +894,23 @@ export default function App() {
         }
         url={externalUrlModal.url}
         title={externalUrlModal.title}
+      />
+
+      {/* Notification Inbox Popover/Modal */}
+      <NotificationInboxModal
+        isOpen={isInboxOpen}
+        onClose={() => setIsInboxOpen(false)}
+        notifications={notifications}
+        onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+        onClearAll={handleClearAllNotifications}
+        onSelectNotification={handleSelectNotification}
+      />
+
+      {/* Real-time Gemini AI Job Parser & Registration Modal */}
+      <AiJobParserModal
+        isOpen={isAiParserOpen}
+        onClose={() => setIsAiParserOpen(false)}
+        onJobAdded={handleJobAdded}
       />
     </div>
   );
